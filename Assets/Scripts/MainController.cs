@@ -28,20 +28,25 @@ namespace DogaShiwakeru
 
         private void OpenDirectoryDialog()
         {
-            SFB.StandaloneFileBrowser.OpenFolderPanelAsync("Select Video Directory", "", false, (string[] paths) =>
+            Debug.Log("Attempting to open synchronous folder panel...");
+            var paths = SFB.StandaloneFileBrowser.OpenFolderPanel("Select Video Directory", "", false);
+            Debug.Log($"Synchronous folder panel returned. Number of paths: {paths.Length}");
+
+            if (paths.Length > 0 && !string.IsNullOrEmpty(paths[0]))
             {
-                if (paths.Length > 0 && !string.IsNullOrEmpty(paths[0]))
-                {
-                    _currentVideoDirectory = paths[0];
-                    Debug.Log($"Selected directory: {_currentVideoDirectory}");
-                    LoadVideos(_currentVideoDirectory);
-                }
-                else
-                {
-                    Debug.LogWarning("Directory selection cancelled or no directory selected.");
-                    // Optionally re-open the dialog or exit application
-                }
-            });
+                // The native dialog can return a path padded with null characters. Trim them.
+                string rawPath = paths[0].TrimEnd('\0');
+                Debug.Log($"Raw path from dialog (trimmed): '{rawPath}'");
+                _currentVideoDirectory = Path.GetFullPath(rawPath);
+                Debug.Log($"Normalized path: '{_currentVideoDirectory}'");
+
+                LoadVideos(_currentVideoDirectory);
+            }
+            else
+            {
+                Debug.LogWarning("Directory selection cancelled or no directory selected.");
+                // Optionally, you could add code here to quit the application or prompt the user again.
+            }
         }
 
         private void LoadVideos(string directoryPath)

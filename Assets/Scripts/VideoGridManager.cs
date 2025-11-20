@@ -25,7 +25,6 @@ namespace DogaShiwakeru
             {
                 VideoPlayerUI videoUI = Instantiate(videoPlayerUIPrefab, gridParent);
                 videoUI.SetVideo(path);
-                videoUI.Play(); // Start playing at low FPS and muted by default
                 videoUI.SetPlaybackSpeed(0.1f); // Low FPS
                 videoUI.SetMute(true); // Muted
                 _currentVideoUIs.Add(videoUI);

@@ -34,10 +34,14 @@ namespace DogaShiwakeru
 
             // Ensure the VideoPlayer is set up correctly
             videoPlayer.playOnAwake = false;
-            videoPlayer.isLooping = true; // Loop all videos by default
+            videoPlayer.isLooping = true;
             videoPlayer.renderMode = VideoRenderMode.RenderTexture;
-            videoPlayer.targetTexture = new RenderTexture(1280, 720, 0); // Default to a common resolution, will be resized for fullscreen
+            videoPlayer.targetTexture = new RenderTexture(256, 256, 0);
             videoDisplay.texture = videoPlayer.targetTexture;
+
+            // Subscribe to the prepareCompleted event
+            videoPlayer.prepareCompleted += OnPrepareCompleted;
+            videoPlayer.loopPointReached += OnVideoEnd;
 
             SetSelected(false);
         }
@@ -45,22 +49,21 @@ namespace DogaShiwakeru
         public void SetVideo(string path)
         {
             _videoPath = path;
-            videoPlayer.url = _videoPath;
-            videoPlayer.Prepare();
-            videoPlayer.loopPointReached += OnVideoEnd; // Register for event
+            videoPlayer.url = "file://" + path; // Prepending "file://" is more robust
+            Debug.Log($"Preparing video: {Path.GetFileName(path)}");
+            videoPlayer.Prepare(); // Start the asynchronous preparation
+        }
 
-            Debug.Log($"VideoPlayerUI set up for: {Path.GetFileName(path)}");
+        // This function is called when the video is ready to play
+        private void OnPrepareCompleted(VideoPlayer source)
+        {
+            Debug.Log($"Video prepared, now playing: {Path.GetFileName(source.url)}");
+            source.Play();
         }
 
         public string GetVideoPath()
         {
             return _videoPath;
-        }
-
-        public void Play()
-        {
-            if (videoPlayer.isPrepared) videoPlayer.Play();
-            else videoPlayer.Prepare(); // Prepare and then play
         }
 
         public void Pause()
