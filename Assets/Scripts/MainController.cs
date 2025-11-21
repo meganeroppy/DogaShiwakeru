@@ -17,12 +17,23 @@ namespace DogaShiwakeru
 
         private string _currentVideoDirectory;
         private bool _isMuted = false; // Global mute state
+        private bool _isCurrentlyFullscreen = false;
 
         void Start()
         {
             Debug.Log("MainController started. Opening directory selection dialog.");
             _videoLoader = new VideoLoader();
             _videoFileManager = new VideoFileManager();
+
+            if (videoGridManager != null && canvasRectTransform != null)
+            {
+                videoGridManager.canvasRectTransform = canvasRectTransform;
+            }
+            else
+            {
+                Debug.LogError("VideoGridManager or CanvasRectTransform not assigned in MainController.");
+            }
+
             OpenDirectoryDialog();
         }
 
@@ -84,7 +95,7 @@ namespace DogaShiwakeru
                 // After loading, select the first video by default
                 if (videoFiles.Count > 0)
                 {
-                    videoGridManager.SetSelectedVideo(0, _isMuted);
+                    videoGridManager.SetSelectedVideo(0, _isMuted, _isCurrentlyFullscreen);
                 }
             }
             else
@@ -126,17 +137,22 @@ namespace DogaShiwakeru
             // Handle selection movement
             if (Input.GetKeyDown(KeyCode.LeftArrow))
             {
-                videoGridManager.MoveSelection(-1, _isMuted);
+                videoGridManager.MoveSelection(-1, _isMuted, _isCurrentlyFullscreen);
             }
             else if (Input.GetKeyDown(KeyCode.RightArrow))
             {
-                videoGridManager.MoveSelection(1, _isMuted);
+                videoGridManager.MoveSelection(1, _isMuted, _isCurrentlyFullscreen);
             }
 
             // Handle deselect all
             if (Input.GetKeyDown(KeyCode.Escape))
             {
-                videoGridManager.DeselectAll();
+                videoGridManager.DeselectAll(_isCurrentlyFullscreen);
+                // After deselecting, we are no longer in fullscreen mode.
+                if (_isCurrentlyFullscreen)
+                {
+                    _isCurrentlyFullscreen = false;
+                }
             }
 
             // Handle 'Delete Candidate' (D key) and 'Immediate Delete' (Shift+D)
@@ -229,7 +245,7 @@ namespace DogaShiwakeru
                 int selectedIndex = videoGridManager.GetSelectedVideoIndex();
                 if (selectedIndex != -1)
                 {
-                    videoGridManager.SetSelectedVideo(selectedIndex, _isMuted); // Pass the new mute state
+                    videoGridManager.SetSelectedVideo(selectedIndex, _isMuted, _isCurrentlyFullscreen); // Pass the new mute state
                 }
                 Debug.Log($"Global mute toggled: {_isMuted}");
             }
@@ -240,7 +256,8 @@ namespace DogaShiwakeru
                 VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
                 if (selectedVideo != null && canvasRectTransform != null)
                 {
-                    selectedVideo.ToggleFullscreen(canvasRectTransform);
+                    // ToggleFullscreen returns the new state
+                    _isCurrentlyFullscreen = selectedVideo.ToggleFullscreen(canvasRectTransform);
                 }
                 else
                 {
