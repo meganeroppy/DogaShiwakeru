@@ -97,11 +97,11 @@ namespace DogaShiwakeru
             // Handle selection movement
             if (Input.GetKeyDown(KeyCode.LeftArrow))
             {
-                videoGridManager.MoveSelection(-1);
+                videoGridManager.MoveSelection(-1, _isMuted);
             }
             else if (Input.GetKeyDown(KeyCode.RightArrow))
             {
-                videoGridManager.MoveSelection(1);
+                videoGridManager.MoveSelection(1, _isMuted);
             }
 
             // Handle deselect all
@@ -200,7 +200,7 @@ namespace DogaShiwakeru
                 int selectedIndex = videoGridManager.GetSelectedVideoIndex();
                 if (selectedIndex != -1)
                 {
-                    videoGridManager.SetSelectedVideo(selectedIndex); // This will re-apply the correct mute state for the selected video
+                    videoGridManager.SetSelectedVideo(selectedIndex, _isMuted); // Pass the new mute state
                 }
                 Debug.Log($"Global mute toggled: {_isMuted}");
             }

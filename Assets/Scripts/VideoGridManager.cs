@@ -26,15 +26,10 @@ namespace DogaShiwakeru
                 VideoPlayerUI videoUI = Instantiate(videoPlayerUIPrefab, gridParent);
                 videoUI.SetVideo(path);
                 videoUI.SetPlaybackSpeed(0.1f); // Low FPS
-                videoUI.SetMute(true); // Muted
+                videoUI.SetMute(true); // Mute all videos on load
                 _currentVideoUIs.Add(videoUI);
             }
             Debug.Log($"Displayed {videoPaths.Count} videos in the grid.");
-
-            if (_currentVideoUIs.Count > 0)
-            {
-                SetSelectedVideo(0);
-            }
         }
 
         private void ClearVideos()
@@ -62,23 +57,26 @@ namespace DogaShiwakeru
             return _currentVideoUIs.Count;
         }
 
-        public void SetSelectedVideo(int index)
+        public void SetSelectedVideo(int index, bool isMutedGlobally = false)
         {
             if (_currentVideoUIs.Count == 0) return;
 
+            // Deselect the old video and explicitly mute it.
             if (_selectedVideoIndex != -1 && _selectedVideoIndex < _currentVideoUIs.Count)
             {
                 _currentVideoUIs[_selectedVideoIndex].SetSelected(false);
-                _currentVideoUIs[_selectedVideoIndex].SetMute(true);
+                _currentVideoUIs[_selectedVideoIndex].SetMute(true); // Always mute deselected video
                 _currentVideoUIs[_selectedVideoIndex].SetPlaybackSpeed(0.1f);
             }
 
             _selectedVideoIndex = index;
 
+            // Select the new video.
             if (_selectedVideoIndex != -1 && _selectedVideoIndex < _currentVideoUIs.Count)
             {
                 _currentVideoUIs[_selectedVideoIndex].SetSelected(true);
-                _currentVideoUIs[_selectedVideoIndex].SetMute(false);
+                // Unmute the selected video ONLY if the global mute is off.
+                _currentVideoUIs[_selectedVideoIndex].SetMute(isMutedGlobally);
                 _currentVideoUIs[_selectedVideoIndex].SetPlaybackSpeed(1.0f);
                 Debug.Log($"Selected video at index: {index}");
             }
@@ -102,16 +100,23 @@ namespace DogaShiwakeru
             return _selectedVideoIndex;
         }
 
-        public void MoveSelection(int direction) // -1 for left, 1 for right
+        public void MoveSelection(int direction, bool isMutedGlobally) // -1 for left, 1 for right
         {
             if (_currentVideoUIs.Count == 0) return;
 
             int newIndex = _selectedVideoIndex + direction;
 
-            if (newIndex < 0) newIndex = _currentVideoUIs.Count - 1;
-            else if (newIndex >= _currentVideoUIs.Count) newIndex = 0;
+            if (_selectedVideoIndex == -1) // If nothing is selected, start from the beginning or end.
+            {
+                newIndex = (direction > 0) ? 0 : _currentVideoUIs.Count - 1;
+            }
+            else
+            {
+                if (newIndex < 0) newIndex = _currentVideoUIs.Count - 1;
+                else if (newIndex >= _currentVideoUIs.Count) newIndex = 0;
+            }
 
-            SetSelectedVideo(newIndex);
+            SetSelectedVideo(newIndex, isMutedGlobally);
         }
 
         public void DeselectAll()

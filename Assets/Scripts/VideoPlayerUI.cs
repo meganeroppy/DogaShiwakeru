@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Video;
 using System.IO;
+using System; // Added for Math functions
 
 namespace DogaShiwakeru
 {
@@ -10,7 +11,8 @@ namespace DogaShiwakeru
         public RawImage videoDisplay;
         public VideoPlayer videoPlayer;
         public GameObject selectionHighlight;
-        public RectTransform videoDisplayRectTransform; // Assign in Inspector
+        public RectTransform videoDisplayRectTransform;
+        public Slider progressSlider; // Assign a UI Slider in the Inspector
 
         private string _videoPath;
         private bool _isFullScreen = false;
@@ -32,29 +34,39 @@ namespace DogaShiwakeru
             _originalParent = transform.parent;
             _originalSiblingIndex = transform.GetSiblingIndex();
 
-            // Ensure the VideoPlayer is set up correctly
             videoPlayer.playOnAwake = false;
             videoPlayer.isLooping = true;
             videoPlayer.renderMode = VideoRenderMode.RenderTexture;
             videoPlayer.targetTexture = new RenderTexture(256, 256, 0);
             videoDisplay.texture = videoPlayer.targetTexture;
 
-            // Subscribe to the prepareCompleted event
             videoPlayer.prepareCompleted += OnPrepareCompleted;
             videoPlayer.loopPointReached += OnVideoEnd;
 
+            if (progressSlider != null)
+            {
+                progressSlider.gameObject.SetActive(false);
+            }
+
             SetSelected(false);
+        }
+
+        void Update()
+        {
+            if (videoPlayer.isPlaying && videoPlayer.length > 0 && progressSlider != null)
+            {
+                progressSlider.value = (float)(videoPlayer.time / videoPlayer.length);
+            }
         }
 
         public void SetVideo(string path)
         {
             _videoPath = path;
-            videoPlayer.url = "file://" + path; // Prepending "file://" is more robust
+            videoPlayer.url = "file://" + path;
             Debug.Log($"Preparing video: {Path.GetFileName(path)}");
-            videoPlayer.Prepare(); // Start the asynchronous preparation
+            videoPlayer.Prepare();
         }
 
-        // This function is called when the video is ready to play
         private void OnPrepareCompleted(VideoPlayer source)
         {
             Debug.Log($"Video prepared, now playing: {Path.GetFileName(source.url)}");
@@ -69,6 +81,16 @@ namespace DogaShiwakeru
         public void Pause()
         {
             videoPlayer.Pause();
+        }
+
+        public void Seek(float seconds)
+        {
+            if (videoPlayer.isPrepared)
+            {
+                double newTime = videoPlayer.time + seconds;
+                newTime = Math.Max(0, Math.Min(videoPlayer.length, newTime));
+                videoPlayer.time = newTime;
+            }
         }
 
         public void SetMute(bool mute)
@@ -90,41 +112,32 @@ namespace DogaShiwakeru
             {
                 selectionHighlight.SetActive(isSelected);
             }
-            else
+            if (progressSlider != null)
             {
-                Debug.LogWarning("Selection highlight not assigned for VideoPlayerUI.");
+                progressSlider.gameObject.SetActive(isSelected);
             }
         }
 
-        public void ToggleFullscreen(RectTransform canvasRectTransform)
+        public bool ToggleFullscreen(RectTransform canvasRectTransform)
         {
             _isFullScreen = !_isFullScreen;
 
             if (_isFullScreen)
             {
-                // Save original state if not already saved (should be in Awake, but as a safeguard)
                 if (_originalParent == null)
                 {
-                    _originalSizeDelta = videoDisplayRectTransform.sizeDelta;
-                    _originalLocalScale = transform.localScale;
-                    _originalLocalPosition = transform.localPosition;
                     _originalParent = transform.parent;
                     _originalSiblingIndex = transform.GetSiblingIndex();
                 }
 
-                // Move to canvas root to overlay everything
                 transform.SetParent(canvasRectTransform, true);
                 videoDisplayRectTransform.anchorMin = Vector2.zero;
                 videoDisplayRectTransform.anchorMax = Vector2.one;
                 videoDisplayRectTransform.sizeDelta = Vector2.zero;
                 videoDisplayRectTransform.anchoredPosition = Vector2.zero;
-                transform.SetAsLastSibling(); // Bring to front
+                transform.SetAsLastSibling();
 
-                // Resize render texture for better quality in fullscreen
-                if (videoPlayer.targetTexture != null)
-                {
-                    videoPlayer.targetTexture.Release();
-                }
+                if (videoPlayer.targetTexture != null) videoPlayer.targetTexture.Release();
                 videoPlayer.targetTexture = new RenderTexture(Screen.width, Screen.height, 0);
                 videoDisplay.texture = videoPlayer.targetTexture;
 
@@ -132,25 +145,21 @@ namespace DogaShiwakeru
             }
             else
             {
-                // Restore original state
                 transform.SetParent(_originalParent, true);
                 transform.SetSiblingIndex(_originalSiblingIndex);
                 videoDisplayRectTransform.sizeDelta = _originalSizeDelta;
                 transform.localScale = _originalLocalScale;
                 transform.localPosition = _originalLocalPosition;
-                videoDisplayRectTransform.anchorMin = new Vector2(0.5f, 0.5f); // Assuming default center pivot
+                videoDisplayRectTransform.anchorMin = new Vector2(0.5f, 0.5f);
                 videoDisplayRectTransform.anchorMax = new Vector2(0.5f, 0.5f);
 
-                // Restore original render texture size
-                if (videoPlayer.targetTexture != null)
-                {
-                    videoPlayer.targetTexture.Release();
-                }
-                videoPlayer.targetTexture = new RenderTexture(256, 256, 0); // Restore to original thumbnail size
+                if (videoPlayer.targetTexture != null) videoPlayer.targetTexture.Release();
+                videoPlayer.targetTexture = new RenderTexture(256, 256, 0);
                 videoDisplay.texture = videoPlayer.targetTexture;
 
                 Debug.Log("Exited fullscreen mode.");
             }
+            return _isFullScreen;
         }
 
         private void OnVideoEnd(VideoPlayer vp)
@@ -160,9 +169,14 @@ namespace DogaShiwakeru
 
         void OnDestroy()
         {
-            if (videoPlayer != null && videoPlayer.targetTexture != null)
+            if (videoPlayer != null)
             {
-                videoPlayer.targetTexture.Release();
+                videoPlayer.prepareCompleted -= OnPrepareCompleted;
+                videoPlayer.loopPointReached -= OnVideoEnd;
+                if (videoPlayer.targetTexture != null)
+                {
+                    videoPlayer.targetTexture.Release();
+                }
             }
         }
     }
