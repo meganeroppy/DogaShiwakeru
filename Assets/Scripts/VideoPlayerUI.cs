@@ -15,6 +15,7 @@ namespace DogaShiwakeru
         public Slider progressSlider; // Assign a UI Slider in the Inspector
 
         private string _videoPath;
+        private bool _isMuted = true;
         private bool _isFullScreen = false;
         private Vector2 _originalSizeDelta;
         private Vector3 _originalLocalScale;
@@ -69,8 +70,14 @@ namespace DogaShiwakeru
 
         private void OnPrepareCompleted(VideoPlayer source)
         {
-            Debug.Log($"Video prepared, now playing: {Path.GetFileName(source.url)}");
+            Debug.Log($"Video prepared: {Path.GetFileName(source.url)}. Applying initial mute state ({_isMuted}).");
+            // Ensure mute state is applied before playing
+            for (ushort i = 0; i < source.audioTrackCount; i++)
+            {
+                source.SetDirectAudioMute(i, _isMuted);
+            }
             source.Play();
+            Debug.Log($"Now playing: {Path.GetFileName(source.url)}");
         }
 
         public string GetVideoPath()
@@ -95,9 +102,12 @@ namespace DogaShiwakeru
 
         public void SetMute(bool mute)
         {
+            _isMuted = mute;
+            if (!videoPlayer.isPrepared) return; // Don't try to mute if not ready, OnPrepareCompleted will handle it
+
             for (ushort i = 0; i < videoPlayer.audioTrackCount; i++)
             {
-                videoPlayer.SetDirectAudioMute(i, mute);
+                videoPlayer.SetDirectAudioMute(i, _isMuted);
             }
         }
 

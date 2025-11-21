@@ -16,7 +16,7 @@ namespace DogaShiwakeru
         public RectTransform canvasRectTransform; // Assign the main Canvas RectTransform in Inspector
 
         private string _currentVideoDirectory;
-        private bool _isMuted = false; // Global mute state
+        private bool _isMuted = true; // Global mute state
 
         void Start()
         {
@@ -30,34 +30,46 @@ namespace DogaShiwakeru
 
         private void OpenDirectoryDialog()
         {
-            Debug.Log("Attempting to open synchronous folder panel...");
-
+            Debug.Log("Attempting to open folder panel...");
             string initialPath = PlayerPrefs.GetString(LAST_VIDEO_DIRECTORY_KEY, "");
-            if (!Directory.Exists(initialPath))
+            Debug.Log($"Loaded last directory from PlayerPrefs: '{initialPath}'");
+
+            if (string.IsNullOrEmpty(initialPath) || !Directory.Exists(initialPath))
             {
-                initialPath = ""; // Reset if the saved path no longer exists
+                Debug.LogWarning($"Saved path ('{initialPath}') is invalid or does not exist. Defaulting to MyDocuments.");
+                initialPath = System.Environment.GetFolderPath(System.Environment.SpecialFolder.MyDocuments);
             }
 
-            var paths = SFB.StandaloneFileBrowser.OpenFolderPanel("Select Video Directory", initialPath, false);
-            Debug.Log($"Synchronous folder panel returned. Number of paths: {paths.Length}");
-
-            if (paths.Length > 0 && !string.IsNullOrEmpty(paths[0]))
+            string[] paths = null;
+            try
             {
-                // The native dialog can return a path padded with null characters. Trim them.
-                string rawPath = paths[0].TrimEnd('\0');
-                Debug.Log($"Raw path from dialog (trimmed): '{rawPath}'");
-                _currentVideoDirectory = Path.GetFullPath(rawPath);
-                Debug.Log($"Normalized path: '{_currentVideoDirectory}'");
+                Debug.Log($"Using initial path for dialog: '{initialPath}'");
+                paths = SFB.StandaloneFileBrowser.OpenFolderPanel("Select Video Directory", initialPath, false);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"An error occurred opening the file browser: {e.Message}");
+                // Fallback: try opening without an initial path if the previous attempt failed
+                paths = SFB.StandaloneFileBrowser.OpenFolderPanel("Select Video Directory", "", false);
+            }
 
+            Debug.Log($"Folder panel returned. Number of paths: {(paths != null ? paths.Length : 0)}");
+
+            if (paths != null && paths.Length > 0 && !string.IsNullOrEmpty(paths[0]))
+            {
+                string rawPath = paths[0].TrimEnd('\0');
+                _currentVideoDirectory = Path.GetFullPath(rawPath);
+                Debug.Log($"Selected directory: '{_currentVideoDirectory}'");
+
+                Debug.Log($"Saving '{_currentVideoDirectory}' to PlayerPrefs with key '{LAST_VIDEO_DIRECTORY_KEY}'.");
                 PlayerPrefs.SetString(LAST_VIDEO_DIRECTORY_KEY, _currentVideoDirectory);
-                PlayerPrefs.Save(); // Ensure the preference is saved to disk
+                PlayerPrefs.Save();
 
                 LoadVideos(_currentVideoDirectory);
             }
             else
             {
                 Debug.LogWarning("Directory selection cancelled or no directory selected.");
-                // Optionally, you could add code here to quit the application or prompt the user again.
             }
         }
 
