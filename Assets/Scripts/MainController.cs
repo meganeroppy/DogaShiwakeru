@@ -16,7 +16,7 @@ namespace DogaShiwakeru
         public RectTransform canvasRectTransform; // Assign the main Canvas RectTransform in Inspector
 
         private string _currentVideoDirectory;
-        private bool _isMuted = true; // Global mute state
+        private bool _isMuted = false; // Global mute state
 
         void Start()
         {
@@ -80,7 +80,12 @@ namespace DogaShiwakeru
             {
                 videoGridManager.DisplayVideos(videoFiles);
                 UpdateVideoCountDisplay(videoFiles.Count);
-                ApplyGlobalMuteState(); // Apply mute state after loading videos
+
+                // After loading, select the first video by default
+                if (videoFiles.Count > 0)
+                {
+                    videoGridManager.SetSelectedVideo(0, _isMuted);
+                }
             }
             else
             {
