@@ -26,10 +26,19 @@ namespace DogaShiwakeru
             OpenDirectoryDialog();
         }
 
+        private const string LAST_VIDEO_DIRECTORY_KEY = "LastVideoDirectory";
+
         private void OpenDirectoryDialog()
         {
             Debug.Log("Attempting to open synchronous folder panel...");
-            var paths = SFB.StandaloneFileBrowser.OpenFolderPanel("Select Video Directory", "", false);
+
+            string initialPath = PlayerPrefs.GetString(LAST_VIDEO_DIRECTORY_KEY, "");
+            if (!Directory.Exists(initialPath))
+            {
+                initialPath = ""; // Reset if the saved path no longer exists
+            }
+
+            var paths = SFB.StandaloneFileBrowser.OpenFolderPanel("Select Video Directory", initialPath, false);
             Debug.Log($"Synchronous folder panel returned. Number of paths: {paths.Length}");
 
             if (paths.Length > 0 && !string.IsNullOrEmpty(paths[0]))
@@ -39,6 +48,9 @@ namespace DogaShiwakeru
                 Debug.Log($"Raw path from dialog (trimmed): '{rawPath}'");
                 _currentVideoDirectory = Path.GetFullPath(rawPath);
                 Debug.Log($"Normalized path: '{_currentVideoDirectory}'");
+
+                PlayerPrefs.SetString(LAST_VIDEO_DIRECTORY_KEY, _currentVideoDirectory);
+                PlayerPrefs.Save(); // Ensure the preference is saved to disk
 
                 LoadVideos(_currentVideoDirectory);
             }
