@@ -19,7 +19,7 @@ namespace DogaShiwakeru
         private List<string> _allVideoPaths = new List<string>();
         private const int MAX_VIDEOS_ON_SCREEN = 20;
 
-        private string _currentVideoDirectory;
+        private string _currentVideoDirectory = "";
         private float _currentVolume = 1.0f;
         private string _fullscreenDisplayFileName = "";
         private int _lastSelectedIndex = -1;
@@ -30,12 +30,14 @@ namespace DogaShiwakeru
 
         private bool _isSaveModeActive = false;
         private bool _isRenameModeActive = false;
-        private string _saveModeInputString = "";
-        private List<string> _saveModeSuggestions = new List<string>();
-        private int _saveModeSuggestionIndex = -1;
+        private bool _isNavigateDownModeActive = false;
+        private string _modalInputString = "";
+        private List<string> _modalSuggestions = new List<string>();
+        private int _modalSuggestionIndex = -1;
         
         private bool _performSaveQueued = false;
         private bool _performRenameQueued = false;
+        private bool _performNavigateDownQueued = false;
         private bool _focusResetQueued = false;
 
         private const string LAST_VIDEO_DIRECTORY_KEY = "LastVideoDirectory";
@@ -74,7 +76,7 @@ namespace DogaShiwakeru
             }
             else
             {
-                _currentVideoDirectory = string.Empty;
+                _currentVideoDirectory = "";
                 _allVideoPaths.Clear();
                 RefreshGridDisplay();
             }
@@ -82,19 +84,23 @@ namespace DogaShiwakeru
         
         private void LoadAllVideoPaths(string directoryPath)
         {
+            if(!Directory.Exists(directoryPath))
+            {
+                Debug.LogError($"Directory not found: {directoryPath}");
+                OpenDirectoryDialog();
+                return;
+            }
+            
             _allVideoPaths = _videoLoader.LoadVideosFromDirectory(directoryPath);
             _currentVideoDirectory = directoryPath;
+            PlayerPrefs.SetString(LAST_VIDEO_DIRECTORY_KEY, _currentVideoDirectory);
+            PlayerPrefs.Save();
+            
+            RefreshGridDisplay();
 
-            if (_allVideoPaths.Any())
+            if (!_allVideoPaths.Any())
             {
-                PlayerPrefs.SetString(LAST_VIDEO_DIRECTORY_KEY, _currentVideoDirectory);
-                PlayerPrefs.Save();
-                RefreshGridDisplay();
-            }
-            else
-            {
-                PlayerPrefs.DeleteKey(LAST_VIDEO_DIRECTORY_KEY);
-                OpenDirectoryDialog();
+                Debug.LogWarning($"Directory '{directoryPath}' contains no video files.");
             }
         }
 
@@ -130,10 +136,13 @@ namespace DogaShiwakeru
                 _focusResetQueued = false;
             }
 
+            // Deferred actions are always checked
             if (_performSaveQueued) { _performSaveQueued = false; PerformSaveAction(); }
             if (_performRenameQueued) { _performRenameQueued = false; PerformRenameAction(); }
+            if (_performNavigateDownQueued) { _performNavigateDownQueued = false; PerformNavigateDownAction(); }
 
-            if (!_isSaveModeActive && !_isRenameModeActive)
+            // Only handle normal input if no modal UI is active
+            if (!_isSaveModeActive && !_isRenameModeActive && !_isNavigateDownModeActive)
             {
                 HandleNormalInput();
             }
@@ -158,9 +167,9 @@ namespace DogaShiwakeru
                 if (videoGridManager.GetSelectedVideoUI() != null)
                 {
                     _isSaveModeActive = true;
-                    _saveModeInputString = "";
-                    _saveModeSuggestionIndex = -1;
-                    UpdateSaveSuggestions();
+                    _modalInputString = "";
+                    _modalSuggestionIndex = -1;
+                    UpdateSubdirectorySuggestions();
                     _focusResetQueued = true;
                 }
             }
@@ -170,9 +179,9 @@ namespace DogaShiwakeru
                 if (selectedVideo != null)
                 {
                     _isRenameModeActive = true;
-                    _saveModeInputString = Path.GetFileName(selectedVideo.GetVideoPath());
-                    _saveModeSuggestions.Clear();
-                    _saveModeSuggestionIndex = -1;
+                    _modalInputString = Path.GetFileName(selectedVideo.GetVideoPath());
+                    _modalSuggestions.Clear();
+                    _modalSuggestionIndex = -1;
                     _focusResetQueued = true;
                 }
             }
@@ -227,13 +236,40 @@ namespace DogaShiwakeru
             }
             else if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.DownArrow))
             {
-                _currentVolume += Input.GetKeyDown(KeyCode.UpArrow) ? 0.1f : -0.1f;
-                _currentVolume = Mathf.Clamp01(_currentVolume);
-                _volumeDisplayText = $"Volume: {_currentVolume:P0}";
-                _volumeDisplayTimer = VOLUME_DISPLAY_DURATION;
-                ApplyGlobalVolume();
-                PlayerPrefs.SetFloat(VOLUME_KEY, _currentVolume);
-                PlayerPrefs.Save();
+                bool isCtrlPressed = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+                if(isCtrlPressed)
+                {
+                    if (Input.GetKeyDown(KeyCode.UpArrow))
+                    {
+                        if (string.IsNullOrEmpty(_currentVideoDirectory)) return;
+                        DirectoryInfo parentDir = Directory.GetParent(_currentVideoDirectory);
+                        if(parentDir != null)
+                        {
+                            LoadAllVideoPaths(parentDir.FullName);
+                        }
+                    }
+                    else // Down Arrow
+                    {
+                        if(!string.IsNullOrEmpty(_currentVideoDirectory))
+                        {
+                            _isNavigateDownModeActive = true;
+                            _modalInputString = "";
+                            _modalSuggestionIndex = -1;
+                            UpdateSubdirectorySuggestions();
+                            _focusResetQueued = true;
+                        }
+                    }
+                }
+                else
+                {
+                    _currentVolume += Input.GetKeyDown(KeyCode.UpArrow) ? 0.1f : -0.1f;
+                    _currentVolume = Mathf.Clamp01(_currentVolume);
+                    _volumeDisplayText = $"Volume: {_currentVolume:P0}";
+                    _volumeDisplayTimer = VOLUME_DISPLAY_DURATION;
+                    ApplyGlobalVolume();
+                    PlayerPrefs.SetFloat(VOLUME_KEY, _currentVolume);
+                    PlayerPrefs.Save();
+                }
             }
             else if (Input.GetKeyDown(KeyCode.O))
             {
@@ -273,26 +309,33 @@ namespace DogaShiwakeru
             }
         }
 
-        private void UpdateSaveSuggestions()
+        private void UpdateSubdirectorySuggestions()
         {
-            _saveModeSuggestions.Clear();
-            _saveModeSuggestionIndex = -1;
-            if (string.IsNullOrEmpty(_saveModeInputString) || string.IsNullOrEmpty(_currentVideoDirectory)) return;
-            var subDirs = Directory.GetDirectories(_currentVideoDirectory);
-            foreach (var dir in subDirs)
+            _modalSuggestions.Clear();
+            _modalSuggestionIndex = -1;
+            if (string.IsNullOrEmpty(_currentVideoDirectory) || !Directory.Exists(_currentVideoDirectory)) return;
+            try
             {
-                string dirName = new DirectoryInfo(dir).Name;
-                if (dirName.StartsWith(_saveModeInputString, System.StringComparison.OrdinalIgnoreCase))
+                var subDirs = Directory.GetDirectories(_currentVideoDirectory);
+                foreach (var dir in subDirs)
                 {
-                    _saveModeSuggestions.Add(dirName);
+                    string dirName = new DirectoryInfo(dir).Name;
+                    if (string.IsNullOrEmpty(_modalInputString) || dirName.StartsWith(_modalInputString, System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (_videoLoader.DirectoryContainsVideos(dir))
+                        {
+                            _modalSuggestions.Add(dirName);
+                        }
+                    }
                 }
             }
-            if (_saveModeSuggestions.Count > 0) _saveModeSuggestionIndex = 0;
+            catch(System.Exception e) { Debug.LogError($"Error getting subdirectories: {e.Message}"); }
+            if (_modalSuggestions.Count > 0) _modalSuggestionIndex = 0;
         }
 
         private void PerformSaveAction()
         {
-            string targetFolderName = _saveModeInputString.Trim();
+            string targetFolderName = _modalInputString.Trim();
             if (!string.IsNullOrEmpty(targetFolderName))
             {
                  HandleFileOperation(Path.Combine(_currentVideoDirectory, targetFolderName), videoGridManager.IsFullscreen());
@@ -308,12 +351,11 @@ namespace DogaShiwakeru
             {
                 int currentIndexOnScreen = videoGridManager.GetSelectedVideoIndex();
                 string sourcePath = selectedVideo.GetVideoPath();
-                string newFileName = _saveModeInputString.Trim();
+                string newFileName = _modalInputString.Trim();
 
                 if (!string.IsNullOrEmpty(newFileName) && !Path.GetFileName(sourcePath).Equals(newFileName, System.StringComparison.Ordinal) && 
                     _videoFileManager.RenameVideoFile(sourcePath, newFileName))
                 {
-                    // Update the path in the master list
                     int masterIndex = _allVideoPaths.FindIndex(p => p == sourcePath);
                     if(masterIndex != -1)
                     {
@@ -325,6 +367,29 @@ namespace DogaShiwakeru
             }
             _isRenameModeActive = false;
             _focusResetQueued = true;
+        }
+
+        private void PerformNavigateDownAction()
+        {
+            string targetSubDir = _modalInputString.Trim();
+            if (string.IsNullOrEmpty(targetSubDir))
+            {
+                _isNavigateDownModeActive = false;
+                _focusResetQueued = true;
+                return;
+            }
+
+            string newPath = Path.Combine(_currentVideoDirectory, targetSubDir);
+            if(Directory.Exists(newPath))
+            {
+                LoadAllVideoPaths(newPath);
+                _isNavigateDownModeActive = false;
+                _focusResetQueued = true;
+            }
+            else
+            {
+                Debug.LogWarning($"Directory not found: {newPath}. Please correct the name or press Escape.");
+            }
         }
         
         private void ApplyGlobalVolume()
@@ -338,58 +403,86 @@ namespace DogaShiwakeru
 
         void OnGUI()
         {
-            if (_isSaveModeActive || _isRenameModeActive)
+            if (_isSaveModeActive || _isRenameModeActive || _isNavigateDownModeActive)
             {
+                // This block handles key events ONLY for the modal UI
                 Event e = Event.current;
                 if (e.type == EventType.KeyDown)
                 {
-                    if (e.keyCode == KeyCode.Escape) { _isSaveModeActive = false; _isRenameModeActive = false; _focusResetQueued = true; e.Use(); }
-                    else if (e.keyCode == KeyCode.Tab && _isSaveModeActive) 
+                    if (e.keyCode == KeyCode.Escape) 
+                    { 
+                        _isSaveModeActive = false; 
+                        _isRenameModeActive = false; 
+                        _isNavigateDownModeActive = false;
+                        _focusResetQueued = true; 
+                        e.Use(); 
+                    }
+                    else if (e.keyCode == KeyCode.Tab && (_isSaveModeActive || _isNavigateDownModeActive)) 
                     {
-                        if (_saveModeSuggestions.Count > 0)
+                        if (_modalSuggestions.Count > 0)
                         {
-                            _saveModeSuggestionIndex = (_saveModeSuggestionIndex + 1) % _saveModeSuggestions.Count;
-                            _saveModeInputString = _saveModeSuggestions[_saveModeSuggestionIndex];
+                            _modalSuggestionIndex = (_modalSuggestionIndex + 1) % _modalSuggestions.Count;
+                            _modalInputString = _modalSuggestions[_modalSuggestionIndex];
                         }
                         e.Use();
                     }
-                    else if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) { if (_isRenameModeActive) _performRenameQueued = true; else _performSaveQueued = true; e.Use(); }
+                    else if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) 
+                    { 
+                        if (_isRenameModeActive) _performRenameQueued = true; 
+                        else if (_isSaveModeActive) _performSaveQueued = true;
+                        else if (_isNavigateDownModeActive) _performNavigateDownQueued = true;
+                        e.Use(); 
+                    }
                 }
-
+                
+                // --- UI Drawing ---
                 GUI.color = new Color(0, 0, 0, 0.7f);
                 GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
                 GUI.color = Color.white;
                 Rect boxRect = new Rect((Screen.width - 400) / 2, (Screen.height - 300) / 2, 400, 300);
                 
-                string boxTitle = _isRenameModeActive ? "Rename File" : "Save to Subfolder";
+                string boxTitle = "Action";
+                if (_isRenameModeActive) boxTitle = "Rename File";
+                else if (_isSaveModeActive) boxTitle = "Save to Subfolder";
+                else if (_isNavigateDownModeActive) boxTitle = "Navigate to Subfolder";
+
                 GUI.Box(boxRect, boxTitle);
                 
                 GUI.SetNextControlName("SaveInput");
-                string newText = GUI.TextField(new Rect(boxRect.x + 10, boxRect.y + 30, boxRect.width - 20, 30), _saveModeInputString, new GUIStyle(GUI.skin.textField) { fontSize = 18 });
-                if (newText != _saveModeInputString) 
+                string newText = GUI.TextField(new Rect(boxRect.x + 10, boxRect.y + 30, boxRect.width - 20, 30), _modalInputString, new GUIStyle(GUI.skin.textField) { fontSize = 18 });
+                if (newText != _modalInputString) 
                 { 
-                    _saveModeInputString = newText;
-                    if (_isSaveModeActive) UpdateSaveSuggestions(); 
+                    _modalInputString = newText;
+                    if (_isSaveModeActive || _isNavigateDownModeActive) UpdateSubdirectorySuggestions(); 
                 }
                 GUI.FocusControl("SaveInput");
 
-                if (_isSaveModeActive && _saveModeSuggestions.Count > 0)
+                if ((_isSaveModeActive || _isNavigateDownModeActive) && _modalSuggestions.Count > 0)
                 {
                     GUIStyle sStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.MiddleLeft };
                     GUIStyle hStyle = new GUIStyle(sStyle) { normal = { textColor = Color.yellow } };
-                    for (int i = 0; i < _saveModeSuggestions.Count; i++)
+                    for (int i = 0; i < _modalSuggestions.Count; i++)
                     {
-                        GUI.Label(new Rect(boxRect.x + 10, boxRect.y + 70 + (i * 25), boxRect.width - 20, 25), _saveModeSuggestions[i], (i == _saveModeSuggestionIndex) ? hStyle : sStyle);
+                        GUI.Label(new Rect(boxRect.x + 10, boxRect.y + 70 + (i * 25), boxRect.width - 20, 25), _modalSuggestions[i], (i == _modalSuggestionIndex) ? hStyle : sStyle);
                     }
                 }
             }
             else
             {
+                // --- Normal UI Overlays ---
                 GUIStyle style = new GUIStyle { fontSize = 20, normal = { textColor = Color.white }, alignment = TextAnchor.UpperLeft };
+                
                 GUI.color = Color.black;
                 GUI.Label(new Rect(11, 11, 300, 30), _videoCountText, style);
                 GUI.color = Color.white;
                 GUI.Label(new Rect(10, 10, 300, 30), _videoCountText, style);
+
+                style.alignment = TextAnchor.UpperRight;
+                Rect dirRect = new Rect(Screen.width - 710, 10, 700, 60);
+                GUI.color = Color.black;
+                GUI.Label(new Rect(dirRect.x + 1, dirRect.y + 1, dirRect.width, dirRect.height), _currentVideoDirectory, style);
+                GUI.color = Color.white;
+                GUI.Label(dirRect, _currentVideoDirectory, style);
 
                 if (!string.IsNullOrEmpty(_fullscreenDisplayFileName))
                 {

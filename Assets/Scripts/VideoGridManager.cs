@@ -37,7 +37,7 @@ namespace DogaShiwakeru
                 videoUI.Init(videoPaths[i]); // Init path for all
                 
                 videoUI.Activate(); // Activate (prepare) all displayed videos
-                videoUI.SetPlaybackSpeed(i < 10 ? 0.01f : 0f); // Low speed for first 10, paused for next batch
+                videoUI.SetPlaybackSpeed(0.25f); // Set to 0.25f for all non-selected displayed thumbnails
                 
                 videoUI.SetMute(true);
                 _currentVideoUIs.Add(videoUI);
@@ -76,8 +76,7 @@ namespace DogaShiwakeru
                 {
                     oldSelectedUI.SetSelected(false);
                     oldSelectedUI.SetMute(true);
-                    // Apply performance rule for deselected videos
-                    oldSelectedUI.SetPlaybackSpeed(_selectedVideoIndex < 10 ? 0.01f : 0f); 
+                    oldSelectedUI.SetPlaybackSpeed(0.25f); // Set to 0.25f when deselected
                 }
             }
 
@@ -181,14 +180,7 @@ namespace DogaShiwakeru
             {
                 videoUI.ToggleFullscreen(canvasRectTransform);
                 // After exiting fullscreen, apply the performance rule again
-                if (_fullscreenVideoIndex < 10)
-                {
-                    videoUI.SetPlaybackSpeed(0.01f);
-                }
-                else
-                {
-                    videoUI.SetPlaybackSpeed(0f);
-                }
+                videoUI.SetPlaybackSpeed(0.25f); // Set to 0.25f when exiting fullscreen
             }
             _fullscreenVideoIndex = -1;
         }
