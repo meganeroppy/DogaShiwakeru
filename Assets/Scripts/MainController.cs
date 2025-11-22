@@ -177,6 +177,16 @@ namespace DogaShiwakeru
                 }
             }
             
+            if (Input.GetKeyDown(KeyCode.Backspace))
+            {
+                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+                if (selectedVideo != null)
+                {
+                    selectedVideo.videoPlayer.time = 0; // Rewind to start
+                    Debug.Log($"Rewound video: {Path.GetFileName(selectedVideo.GetVideoPath())}");
+                }
+            }
+
             if (Input.GetKeyDown(KeyCode.D)) HandleFileOperation(Path.Combine(_currentVideoDirectory, "del"), _isCurrentlyFullscreen);
             if (Input.GetKeyDown(KeyCode.N)) HandleFileOperation(Path.Combine(_currentVideoDirectory, "nice"), _isCurrentlyFullscreen);
 
