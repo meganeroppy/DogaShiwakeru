@@ -114,7 +114,7 @@ namespace DogaShiwakeru
             }
             
             _focusResetQueued = true;
-            Input.ResetInputAxes(); // Reset input state after major UI rebuild
+            Input.ResetInputAxes(); 
         }
         
         private void UpdateVideoCountDisplay(int count)
@@ -128,17 +128,10 @@ namespace DogaShiwakeru
 
             if (_focusResetQueued)
             {
-                Debug.Log("[DIAG] Executing queued focus reset.");
                 EventSystem.current.SetSelectedGameObject(null);
                 _focusResetQueued = false;
             }
             
-            if (Input.anyKeyDown && !(_isSaveModeActive || _isRenameModeActive || _isNavigateDownModeActive))
-            {
-                string focusedObjectName = EventSystem.current.currentSelectedGameObject ? EventSystem.current.currentSelectedGameObject.name : "null";
-                Debug.Log($"[DIAG-UPDATE] KeyDown detected in Normal Mode. Focused: {focusedObjectName}.");
-            }
-
             if (_performSaveQueued) { _performSaveQueued = false; PerformSaveAction(); }
             if (_performRenameQueued) { _performRenameQueued = false; PerformRenameAction(); }
             if (_performNavigateDownQueued) { _performNavigateDownQueued = false; PerformNavigateDownAction(); }
@@ -162,11 +155,11 @@ namespace DogaShiwakeru
             if (_volumeDisplayTimer > 0) _volumeDisplayTimer -= Time.deltaTime;
 
             bool isFullscreen = videoGridManager.IsFullscreen(); 
+            VideoPlayerUI currentVideo = videoGridManager.GetSelectedVideoUI();
 
             if (Input.GetKeyDown(KeyCode.S))
             {
-                Debug.Log("[DIAG] S key processed.");
-                if (videoGridManager.GetSelectedVideoUI() != null)
+                if (currentVideo != null)
                 {
                     _isSaveModeActive = true;
                     _modalInputString = "";
@@ -177,12 +170,10 @@ namespace DogaShiwakeru
             }
             else if (Input.GetKeyDown(KeyCode.R))
             {
-                Debug.Log("[DIAG] R key processed.");
-                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
-                if (selectedVideo != null)
+                if (currentVideo != null)
                 {
                     _isRenameModeActive = true;
-                    _modalInputString = Path.GetFileName(selectedVideo.GetVideoPath());
+                    _modalInputString = Path.GetFileName(currentVideo.GetVideoPath());
                     _modalSuggestions.Clear();
                     _modalSuggestionIndex = -1;
                     _focusResetQueued = true;
@@ -207,17 +198,15 @@ namespace DogaShiwakeru
             }
             else if (Input.GetKeyDown(KeyCode.Space))
             {
-                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
-                if (selectedVideo != null)
+                if (currentVideo != null)
                 {
-                    if (selectedVideo.videoPlayer.isPlaying) { selectedVideo.Pause(); } 
-                    else { selectedVideo.Play(); }
+                    if (currentVideo.videoPlayer.isPlaying) { currentVideo.Pause(); }
+                    else { currentVideo.Play(); }
                 }
             }
             else if (Input.GetKeyDown(KeyCode.Backspace))
             {
-                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
-                if (selectedVideo != null) selectedVideo.videoPlayer.time = 0;
+                if (currentVideo != null) currentVideo.videoPlayer.time = 0;
             }
             else if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.RightArrow))
             {
@@ -226,15 +215,11 @@ namespace DogaShiwakeru
                 {
                     videoGridManager.MoveSelection(Input.GetKeyDown(KeyCode.LeftArrow) ? -1 : 1); 
                 }
-                else
+                else if (currentVideo != null)
                 {
-                    VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
-                    if (selectedVideo != null)
-                    {
-                        bool isShiftPressed = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-                        float seekSeconds = isShiftPressed ? 300.0f : 15.0f;
-                        selectedVideo.Seek(Input.GetKeyDown(KeyCode.LeftArrow) ? -seekSeconds : seekSeconds);
-                    }
+                    bool isShiftPressed = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+                    float seekSeconds = isShiftPressed ? 300.0f : 15.0f;
+                    currentVideo.Seek(Input.GetKeyDown(KeyCode.LeftArrow) ? -seekSeconds : seekSeconds);
                 }
             }
             else if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.DownArrow))
@@ -276,22 +261,34 @@ namespace DogaShiwakeru
             }
             else if (Input.GetKeyDown(KeyCode.O))
             {
-                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
-                if (selectedVideo != null) System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{selectedVideo.GetVideoPath()}\"");
+                if (currentVideo != null) System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{currentVideo.GetVideoPath()}\"");
             }
             else if (Input.GetKeyDown(KeyCode.M))
             {
-                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
-                if (selectedVideo != null) selectedVideo.ToggleMute();
+                if (currentVideo != null) currentVideo.ToggleMute();
             }
             else if (Input.GetKeyDown(KeyCode.G))
             {
-                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
-                if (selectedVideo != null)
+                if (currentVideo != null)
                 {
-                    string fileName = Path.GetFileNameWithoutExtension(selectedVideo.GetVideoPath());
+                    string fileName = Path.GetFileNameWithoutExtension(currentVideo.GetVideoPath());
                     string encodedFileName = UnityEngine.Networking.UnityWebRequest.EscapeURL(fileName);
                     Application.OpenURL($"https://www.google.com/search?q={encodedFileName}");
+                }
+            }
+            else
+            {
+                // Percentage Seek Logic
+                if (currentVideo != null)
+                {
+                    for (int i = 0; i <= 9; i++)
+                    {
+                        if (Input.GetKeyDown(KeyCode.Alpha0 + i) || Input.GetKeyDown(KeyCode.Keypad0 + i))
+                        {
+                            currentVideo.SeekToPercent(i * 0.1f);
+                            break; 
+                        }
+                    }
                 }
             }
         }
@@ -413,17 +410,15 @@ namespace DogaShiwakeru
                 {
                     if (e.keyCode == KeyCode.Escape) 
                     { 
-                        Debug.Log("[DIAG-ONGUI] Escape key pressed. Exiting modal.");
                         _isSaveModeActive = false; 
                         _isRenameModeActive = false; 
                         _isNavigateDownModeActive = false;
                         _focusResetQueued = true; 
-                        Input.ResetInputAxes(); // Attempt to reset Input state
+                        Input.ResetInputAxes(); 
                         e.Use(); 
                     }
                     else if (e.keyCode == KeyCode.Tab && (_isSaveModeActive || _isNavigateDownModeActive)) 
-                    { 
-                        Debug.Log("[DIAG-ONGUI] Tab key pressed.");
+                    {
                         if (_modalSuggestions.Count > 0)
                         {
                             _modalSuggestionIndex = (_modalSuggestionIndex + 1) % _modalSuggestions.Count;
@@ -432,8 +427,7 @@ namespace DogaShiwakeru
                         e.Use();
                     }
                     else if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) 
-                    { 
-                        Debug.Log("[DIAG-ONGUI] Enter key pressed.");
+                    {
                         if (_isRenameModeActive) _performRenameQueued = true; 
                         else if (_isSaveModeActive) _performSaveQueued = true;
                         else if (_isNavigateDownModeActive) _performNavigateDownQueued = true;
@@ -441,7 +435,6 @@ namespace DogaShiwakeru
                     }
                 }
                 
-                // --- UI Drawing ---
                 GUI.color = new Color(0, 0, 0, 0.7f);
                 GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
                 GUI.color = Color.white;
@@ -475,7 +468,6 @@ namespace DogaShiwakeru
             }
             else
             {
-                // --- Normal UI Overlays ---
                 GUIStyle style = new GUIStyle { fontSize = 20, normal = { textColor = Color.white }, alignment = TextAnchor.UpperLeft };
                 
                 GUI.color = Color.black;

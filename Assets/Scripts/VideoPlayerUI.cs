@@ -140,6 +140,15 @@ namespace DogaShiwakeru
             source.Play();
         }
 
+        public void SeekToPercent(float percent)
+        {
+            if (videoPlayer.isPrepared && videoPlayer.length > 0)
+            {
+                float clampedPercent = Mathf.Clamp01(percent);
+                videoPlayer.time = videoPlayer.length * clampedPercent;
+            }
+        }
+
         public string GetVideoPath() => _videoPath;
         public void Pause() => videoPlayer.Pause();
         public void Play() => videoPlayer.Play();
