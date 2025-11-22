@@ -59,7 +59,7 @@ namespace DogaShiwakeru
 
         public RectTransform canvasRectTransform; // Assign from MainController
 
-        public void SetSelectedVideo(int index, bool isFullscreenMode)
+        public void SetSelectedVideo(int index, bool forceFullscreen = false)
         {
             if (_selectedVideoIndex == index) return;
 
@@ -68,13 +68,12 @@ namespace DogaShiwakeru
             {
                 var oldSelectedUI = _currentVideoUIs[_selectedVideoIndex];
                 
-                // If we are switching videos in fullscreen, the old one must exit fullscreen first.
-                if (isFullscreenMode)
+                // If we are in fullscreen, the old video must exit.
+                if (forceFullscreen)
                 {
                     oldSelectedUI.ToggleFullscreen(canvasRectTransform);
                 }
                 
-                // Now that its state is correct (not fullscreen), formally deselect it.
                 oldSelectedUI.SetSelected(false);
                 oldSelectedUI.SetMute(true);
                 oldSelectedUI.SetPlaybackSpeed(0.1f);
@@ -87,21 +86,16 @@ namespace DogaShiwakeru
             {
                 var newSelectedUI = _currentVideoUIs[_selectedVideoIndex];
 
-                // Formally select it first so its state is correct.
                 newSelectedUI.SetSelected(true);
-                newSelectedUI.SetMute(false); // Always unmute the selected video
+                newSelectedUI.SetMute(false);
                 newSelectedUI.SetPlaybackSpeed(1.0f);
 
-                // If we are supposed to be in fullscreen, now tell the new video to enter it.
-                if (isFullscreenMode)
+                // If we are supposed to be in fullscreen, enter it.
+                if (forceFullscreen)
                 {
                     newSelectedUI.ToggleFullscreen(canvasRectTransform);
                 }
                 Debug.Log($"Selected video at index: {index}");
-            }
-            else
-            {
-                Debug.Log("No video selected.");
             }
         }
 
