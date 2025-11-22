@@ -16,7 +16,6 @@ namespace DogaShiwakeru
         public string initialVideoPath;
 
         private string _currentVideoDirectory;
-        private bool _isCurrentlyFullscreen = false;
         private float _currentVolume = 1.0f;
 
         private string _fullscreenDisplayFileName = "";
@@ -33,6 +32,9 @@ namespace DogaShiwakeru
         private string _saveModeInputString = "";
         private List<string> _saveModeSuggestions = new List<string>();
         private int _saveModeSuggestionIndex = -1;
+        
+        private bool _performSaveQueued = false;
+        private bool _performRenameQueued = false;
 
         private const string LAST_VIDEO_DIRECTORY_KEY = "LastVideoDirectory";
         private const string VOLUME_KEY = "LastVolumeLevel";
@@ -44,10 +46,8 @@ namespace DogaShiwakeru
             _videoFileManager = new VideoFileManager();
             _currentVolume = PlayerPrefs.GetFloat(VOLUME_KEY, 1.0f);
 
-            if (videoGridManager == null || canvasRectTransform == null)
-            {
-                Debug.LogError("VideoGridManager or CanvasRectTransform not assigned.");
-            }
+            if (videoGridManager != null) videoGridManager.canvasRectTransform = canvasRectTransform;
+            else Debug.LogError("VideoGridManager not assigned.");
 
             string lastDirectory = PlayerPrefs.GetString(LAST_VIDEO_DIRECTORY_KEY, "");
             if (!string.IsNullOrEmpty(lastDirectory) && Directory.Exists(lastDirectory) && _videoLoader.LoadVideosFromDirectory(lastDirectory).Any())
@@ -71,6 +71,7 @@ namespace DogaShiwakeru
             }
             else
             {
+                _currentVideoDirectory = string.Empty; // Clear current directory on cancel
                 videoGridManager.DisplayVideos(new List<string>());
                 UpdateVideoCountDisplay(0);
             }
@@ -93,12 +94,11 @@ namespace DogaShiwakeru
                     PlayerPrefs.Save();
 
                     int finalIndex = Mathf.Clamp(indexToSelectAfterLoad, 0, videoFiles.Count - 1);
-                    Debug.Log($"[DIAG] MainController -> Calling SetSelectedVideo(index: {finalIndex}, forceFullscreen: {forceFullscreen})");
-                    videoGridManager.SetSelectedVideo(finalIndex, forceFullscreen);
+                    videoGridManager.SelectAndPossiblyFullscreen(finalIndex, forceFullscreen); 
                 }
                 else
                 {
-                    if (_isCurrentlyFullscreen) _isCurrentlyFullscreen = false;
+                    if (videoGridManager.IsFullscreen()) videoGridManager.DeselectOrExitFullscreen(); 
                     PlayerPrefs.DeleteKey(LAST_VIDEO_DIRECTORY_KEY);
                     OpenDirectoryDialog();
                 }
@@ -113,6 +113,10 @@ namespace DogaShiwakeru
         void Update()
         {
             if (videoGridManager == null) return;
+
+            if (_performSaveQueued) { _performSaveQueued = false; PerformSaveAction(); }
+            if (_performRenameQueued) { _performRenameQueued = false; PerformRenameAction(); }
+
             if (!_isSaveModeActive && !_isRenameModeActive)
             {
                 HandleNormalInput();
@@ -124,15 +128,8 @@ namespace DogaShiwakeru
             int currentSelectedIndex = videoGridManager.GetSelectedVideoIndex();
             if (currentSelectedIndex != _lastSelectedIndex)
             {
-                if (currentSelectedIndex != -1)
-                {
-                    var selectedVideo = videoGridManager.GetVideoUI(currentSelectedIndex);
-                    _fullscreenDisplayFileName = selectedVideo != null ? Path.GetFileName(selectedVideo.GetVideoPath()) : "";
-                }
-                else
-                {
-                    _fullscreenDisplayFileName = "";
-                }
+                var selectedVideo = videoGridManager.GetVideoUI(currentSelectedIndex);
+                _fullscreenDisplayFileName = selectedVideo != null ? Path.GetFileName(selectedVideo.GetVideoPath()) : "";
                 _lastSelectedIndex = currentSelectedIndex;
             }
 
@@ -143,7 +140,7 @@ namespace DogaShiwakeru
                 bool isCtrlPressed = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
                 if (isCtrlPressed)
                 {
-                    videoGridManager.MoveSelection(Input.GetKeyDown(KeyCode.LeftArrow) ? -1 : 1, _isCurrentlyFullscreen);
+                    videoGridManager.MoveSelection(Input.GetKeyDown(KeyCode.LeftArrow) ? -1 : 1); 
                 }
                 else
                 {
@@ -171,30 +168,18 @@ namespace DogaShiwakeru
             if (Input.GetKeyDown(KeyCode.Escape))
             {
                 if (videoGridManager.GetSelectedVideoIndex() == -1) { OpenDirectoryDialog(); } 
-                else
-                {
-                    videoGridManager.DeselectAll(_isCurrentlyFullscreen);
-                    if (_isCurrentlyFullscreen) _isCurrentlyFullscreen = false;
-                }
+                else { videoGridManager.DeselectOrExitFullscreen(); }
             }
             
             if (Input.GetKeyDown(KeyCode.Backspace))
             {
                 VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
-                if (selectedVideo != null)
-                {
-                    selectedVideo.videoPlayer.time = 0; // Rewind to start
-                    Debug.Log($"Rewound video: {Path.GetFileName(selectedVideo.GetVideoPath())}");
-                }
+                if (selectedVideo != null) selectedVideo.videoPlayer.time = 0;
             }
 
-            if (Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.N) || Input.GetKeyDown(KeyCode.S))
-            {
-                 Debug.Log($"[DIAG] File operation key pressed. _isCurrentlyFullscreen = {_isCurrentlyFullscreen}");
-            }
-
-            if (Input.GetKeyDown(KeyCode.D)) HandleFileOperation(Path.Combine(_currentVideoDirectory, "del"), _isCurrentlyFullscreen);
-            if (Input.GetKeyDown(KeyCode.N)) HandleFileOperation(Path.Combine(_currentVideoDirectory, "nice"), _isCurrentlyFullscreen);
+            bool isFullscreen = videoGridManager.IsFullscreen(); 
+            if (Input.GetKeyDown(KeyCode.D)) HandleFileOperation(Path.Combine(_currentVideoDirectory, "del"), isFullscreen);
+            if (Input.GetKeyDown(KeyCode.N)) HandleFileOperation(Path.Combine(_currentVideoDirectory, "nice"), isFullscreen);
 
             if (Input.GetKeyDown(KeyCode.S))
             {
@@ -214,7 +199,7 @@ namespace DogaShiwakeru
                 {
                     _isRenameModeActive = true;
                     _saveModeInputString = Path.GetFileName(selectedVideo.GetVideoPath());
-                    _saveModeSuggestions.Clear(); // No suggestions for rename
+                    _saveModeSuggestions.Clear();
                     _saveModeSuggestionIndex = -1;
                 }
             }
@@ -233,8 +218,7 @@ namespace DogaShiwakeru
 
             if (Input.GetKeyDown(KeyCode.F))
             {
-                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
-                if (selectedVideo != null) _isCurrentlyFullscreen = selectedVideo.ToggleFullscreen(canvasRectTransform);
+                videoGridManager.ToggleFullscreenOnSelected();
             }
 
             if (Input.GetKeyDown(KeyCode.G))
@@ -244,15 +228,12 @@ namespace DogaShiwakeru
                 {
                     string fileName = Path.GetFileNameWithoutExtension(selectedVideo.GetVideoPath());
                     string encodedFileName = UnityEngine.Networking.UnityWebRequest.EscapeURL(fileName);
-                    string googleSearchUrl = $"https://www.google.com/search?q={encodedFileName}";
-                    
-                    Debug.Log($"Opening browser to search for: {fileName}");
-                    Application.OpenURL(googleSearchUrl);
+                    Application.OpenURL($"https://www.google.com/search?q={encodedFileName}");
                 }
             }
         }
         
-        private void HandleFileOperation(string destFolderPath, bool maintainFullscreen)
+        private void HandleFileOperation(string destFolderPath, bool wasFullscreen)
         {
             VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
             if (selectedVideo != null && !string.IsNullOrEmpty(_currentVideoDirectory))
@@ -261,7 +242,7 @@ namespace DogaShiwakeru
                 string sourcePath = selectedVideo.GetVideoPath();
                 if (_videoFileManager.MoveVideoFile(sourcePath, destFolderPath))
                 {
-                    LoadVideos(_currentVideoDirectory, currentIndex, maintainFullscreen);
+                    LoadVideos(_currentVideoDirectory, currentIndex, wasFullscreen);
                     _lastSelectedIndex = -1;
                 }
             }
@@ -289,7 +270,7 @@ namespace DogaShiwakeru
             string targetFolderName = _saveModeInputString.Trim();
             if (!string.IsNullOrEmpty(targetFolderName))
             {
-                 HandleFileOperation(Path.Combine(_currentVideoDirectory, targetFolderName), _isCurrentlyFullscreen);
+                 HandleFileOperation(Path.Combine(_currentVideoDirectory, targetFolderName), videoGridManager.IsFullscreen());
                  _lastSelectedIndex = -1;
             }
             _isSaveModeActive = false;
@@ -299,24 +280,19 @@ namespace DogaShiwakeru
         {
             string newFileName = _saveModeInputString.Trim();
             VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
-
             if (selectedVideo != null && !string.IsNullOrEmpty(newFileName))
             {
                 int currentIndex = videoGridManager.GetSelectedVideoIndex();
                 string sourcePath = selectedVideo.GetVideoPath();
                 
-                if (Path.GetFileName(sourcePath).Equals(newFileName, System.StringComparison.Ordinal))
+                if (!Path.GetFileName(sourcePath).Equals(newFileName, System.StringComparison.Ordinal) && 
+                    _videoFileManager.RenameVideoFile(sourcePath, newFileName))
                 {
-                     Debug.Log("File name is unchanged. Aborting rename.");
-                }
-                else if (_videoFileManager.RenameVideoFile(sourcePath, newFileName))
-                {
-                    // Reload the list to reflect the new name, maintaining fullscreen if active
-                    LoadVideos(_currentVideoDirectory, currentIndex, _isCurrentlyFullscreen);
+                    LoadVideos(_currentVideoDirectory, currentIndex, videoGridManager.IsFullscreen());
                     _lastSelectedIndex = -1;
                 }
             }
-            _isRenameModeActive = false; // Always exit rename mode
+            _isRenameModeActive = false;
         }
         
         private void ApplyGlobalVolume()
@@ -335,13 +311,8 @@ namespace DogaShiwakeru
                 Event e = Event.current;
                 if (e.type == EventType.KeyDown)
                 {
-                    if (e.keyCode == KeyCode.Escape) 
-                    { 
-                        _isSaveModeActive = false; 
-                        _isRenameModeActive = false; 
-                        e.Use(); 
-                    }
-                    else if (e.keyCode == KeyCode.Tab && _isSaveModeActive) // Tab only works in Save mode
+                    if (e.keyCode == KeyCode.Escape) { _isSaveModeActive = false; _isRenameModeActive = false; e.Use(); }
+                    else if (e.keyCode == KeyCode.Tab && _isSaveModeActive) 
                     {
                         if (_saveModeSuggestions.Count > 0)
                         {
@@ -350,12 +321,7 @@ namespace DogaShiwakeru
                         }
                         e.Use();
                     }
-                    else if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) 
-                    { 
-                        if (_isRenameModeActive) PerformRenameAction();
-                        else PerformSaveAction();
-                        e.Use(); 
-                    }
+                    else if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) { if (_isRenameModeActive) _performRenameQueued = true; else _performSaveQueued = true; e.Use(); }
                 }
 
                 GUI.color = new Color(0, 0, 0, 0.7f);
@@ -397,12 +363,10 @@ namespace DogaShiwakeru
                 {
                     style.alignment = TextAnchor.UpperLeft;
                     style.fontSize = 20;
-                    style.wordWrap = true; // Enable word wrapping
+                    style.wordWrap = true; 
 
-                    // Provide a taller Rect to allow for wrapping
                     Rect filenameRect = new Rect(10, 40, Screen.width - 20, 60); 
 
-                    // Draw shadow and text within the same word-wrapped rect
                     GUI.color = Color.black; 
                     GUI.Label(new Rect(filenameRect.x + 1, filenameRect.y + 1, filenameRect.width, filenameRect.height), _fullscreenDisplayFileName, style);
                     GUI.color = Color.white; 
@@ -411,7 +375,7 @@ namespace DogaShiwakeru
                 
                 if (_volumeDisplayTimer > 0)
                 {
-                    style.alignment = TextAnchor.LowerCenter; style.fontSize = 24; style.wordWrap = false; // Reset for other labels
+                    style.alignment = TextAnchor.LowerCenter; style.fontSize = 24; style.wordWrap = false; 
                     GUI.color = Color.black; GUI.Label(new Rect(0, Screen.height - 41, Screen.width, 40), _volumeDisplayText, style);
                     GUI.color = Color.white; GUI.Label(new Rect(0, Screen.height - 40, Screen.width, 40), _volumeDisplayText, style);
                 }

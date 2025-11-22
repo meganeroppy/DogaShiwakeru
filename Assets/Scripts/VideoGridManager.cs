@@ -7,20 +7,21 @@ namespace DogaShiwakeru
     {
         public VideoPlayerUI videoPlayerUIPrefab;
         public Transform gridParent;
+        public RectTransform canvasRectTransform;
 
         private List<VideoPlayerUI> _currentVideoUIs = new List<VideoPlayerUI>();
         private int _selectedVideoIndex = -1;
+        private int _fullscreenVideoIndex = -1; // The single source of truth for fullscreen state
+
+        public bool IsFullscreen()
+        {
+            return _fullscreenVideoIndex != -1;
+        }
 
         public void DisplayVideos(List<string> videoPaths)
         {
             ClearVideos();
-
-            if (videoPaths == null || videoPaths.Count == 0)
-            {
-                Debug.Log("No video files to display.");
-                return;
-            }
-
+            if (videoPaths == null) return;
             foreach (string path in videoPaths)
             {
                 VideoPlayerUI videoUI = Instantiate(videoPlayerUIPrefab, gridParent);
@@ -39,88 +40,63 @@ namespace DogaShiwakeru
             }
             _currentVideoUIs.Clear();
             _selectedVideoIndex = -1;
+            _fullscreenVideoIndex = -1;
         }
 
         public VideoPlayerUI GetVideoUI(int index)
         {
-            if (index >= 0 && index < _currentVideoUIs.Count)
-            {
-                return _currentVideoUIs[index];
-            }
-            return null;
+            return (index >= 0 && index < _currentVideoUIs.Count) ? _currentVideoUIs[index] : null;
         }
 
-        public int GetVideoCount()
-        {
-            return _currentVideoUIs.Count;
-        }
+        public int GetVideoCount() => _currentVideoUIs.Count;
+        public VideoPlayerUI GetSelectedVideoUI() => GetVideoUI(_selectedVideoIndex);
+        public int GetSelectedVideoIndex() => _selectedVideoIndex;
 
-        public RectTransform canvasRectTransform;
-
-        public void SetSelectedVideo(int index, bool maintainFullscreen = false)
+        public void SetSelectedVideo(int index)
         {
-            Debug.Log($"[DIAG] VideoGridManager.SetSelectedVideo called with index: {index}, maintainFullscreen: {maintainFullscreen}");
             if (_selectedVideoIndex == index) return;
 
-            // Get safe references to the old and new UI objects
-            VideoPlayerUI oldSelectedUI = null;
-            if (_selectedVideoIndex != -1 && _selectedVideoIndex < _currentVideoUIs.Count)
+            // Deselect old
+            if (_selectedVideoIndex != -1)
             {
-                oldSelectedUI = _currentVideoUIs[_selectedVideoIndex];
+                var oldSelectedUI = GetVideoUI(_selectedVideoIndex);
+                if (oldSelectedUI != null)
+                {
+                    oldSelectedUI.SetSelected(false);
+                    oldSelectedUI.SetMute(true);
+                    oldSelectedUI.SetPlaybackSpeed(0.1f);
+                }
             }
 
             _selectedVideoIndex = index;
 
-            VideoPlayerUI newSelectedUI = null;
-            if (_selectedVideoIndex != -1 && _selectedVideoIndex < _currentVideoUIs.Count)
-            {
-                newSelectedUI = _currentVideoUIs[_selectedVideoIndex];
-            }
-
-            Debug.Log($"[DIAG] Old UI: {(oldSelectedUI != null ? oldSelectedUI.name : "null")}, New UI: {(newSelectedUI != null ? newSelectedUI.name : "null")}");
-
-            // --- Process NEW selection FIRST ---
+            // Select new
+            var newSelectedUI = GetVideoUI(_selectedVideoIndex);
             if (newSelectedUI != null)
             {
                 newSelectedUI.SetSelected(true);
                 newSelectedUI.SetMute(false);
                 newSelectedUI.SetPlaybackSpeed(1.0f);
-                if (maintainFullscreen)
-                {
-                    Debug.Log($"[DIAG] New UI: maintainFullscreen is true. IsFullscreen() = {newSelectedUI.IsFullscreen()}. Calling ToggleFullscreen.");
-                    newSelectedUI.ToggleFullscreen(canvasRectTransform);
-                }
-            }
-
-            // --- Process OLD selection SECOND ---
-            if (oldSelectedUI != null)
-            {
-                if (maintainFullscreen)
-                {
-                    Debug.Log($"[DIAG] Old UI: maintainFullscreen is true. IsFullscreen() = {oldSelectedUI.IsFullscreen()}. Calling ToggleFullscreen.");
-                    oldSelectedUI.ToggleFullscreen(canvasRectTransform);
-                }
-                oldSelectedUI.SetSelected(false);
-                oldSelectedUI.SetMute(true);
-                oldSelectedUI.SetPlaybackSpeed(0.1f);
             }
         }
 
-        public VideoPlayerUI GetSelectedVideoUI()
+        public void SelectAndPossiblyFullscreen(int index, bool makeFullscreen)
         {
-            if (_selectedVideoIndex != -1 && _selectedVideoIndex < _currentVideoUIs.Count)
+            // If currently in fullscreen and moving to a new selection, exit old fullscreen first.
+            if (IsFullscreen() && _fullscreenVideoIndex != index)
             {
-                return _currentVideoUIs[_selectedVideoIndex];
+                ExitFullscreen();
             }
-            return null;
+
+            SetSelectedVideo(index);
+
+            if (makeFullscreen && _selectedVideoIndex != -1)
+            {
+                EnterFullscreen(_selectedVideoIndex);
+            }
         }
 
-        public int GetSelectedVideoIndex()
-        {
-            return _selectedVideoIndex;
-        }
-
-        public void MoveSelection(int direction, bool isFullscreenMode)
+        public void MoveSelection(int direction)
         {
             if (_currentVideoUIs.Count == 0) return;
 
@@ -134,16 +110,64 @@ namespace DogaShiwakeru
                 newIndex = (newIndex + _currentVideoUIs.Count) % _currentVideoUIs.Count;
             }
 
-            SetSelectedVideo(newIndex, isFullscreenMode);
+            SelectAndPossiblyFullscreen(newIndex, IsFullscreen());
         }
 
-        public void DeselectAll(bool isFullscreenMode)
+        public void DeselectOrExitFullscreen()
         {
-            if (isFullscreenMode && _selectedVideoIndex != -1)
+            if (IsFullscreen())
             {
-                _currentVideoUIs[_selectedVideoIndex].ToggleFullscreen(canvasRectTransform);
+                ExitFullscreen();
             }
-            SetSelectedVideo(-1, false);
+            else
+            {
+                SetSelectedVideo(-1);
+            }
+        }
+
+        public void ToggleFullscreenOnSelected()
+        {
+            if (_selectedVideoIndex == -1) return;
+
+            if (IsFullscreen())
+            {
+                // If currently in fullscreen
+                if (_selectedVideoIndex == _fullscreenVideoIndex) // If the selected one IS the fullscreen one, toggle off
+                {
+                    ExitFullscreen();
+                }
+                else // A different video is fullscreen, switch to the selected one
+                {
+                    ExitFullscreen();
+                    EnterFullscreen(_selectedVideoIndex);
+                }
+            }
+            else // Not in fullscreen, so enter fullscreen with the selected video
+            {
+                EnterFullscreen(_selectedVideoIndex);
+            }
+        }
+        
+        private void EnterFullscreen(int index)
+        {
+            if (index == -1) return;
+            var videoUI = GetVideoUI(index);
+            if (videoUI != null && !videoUI.IsFullscreen())
+            {
+                videoUI.ToggleFullscreen(canvasRectTransform);
+                _fullscreenVideoIndex = index;
+            }
+        }
+
+        private void ExitFullscreen()
+        {
+            if (_fullscreenVideoIndex == -1) return;
+            var videoUI = GetVideoUI(_fullscreenVideoIndex);
+            if (videoUI != null && videoUI.IsFullscreen())
+            {
+                videoUI.ToggleFullscreen(canvasRectTransform);
+            }
+            _fullscreenVideoIndex = -1;
         }
     }
 }

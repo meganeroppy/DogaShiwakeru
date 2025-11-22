@@ -186,20 +186,16 @@ namespace DogaShiwakeru
 
         public bool ToggleFullscreen(RectTransform canvasRectTransform)
         {
-            Debug.Log($"[DIAG] ToggleFullscreen called on {Path.GetFileName(_videoPath)}. Current _isFullScreen = {_isFullScreen}");
             _isFullScreen = !_isFullScreen;
             
-            // Update UI visibility based on the new fullscreen state.
             UpdateProgressUI(_isFullScreen); 
             if (selectionHighlight != null)
             {
-                // Highlight is active only when NOT in fullscreen (assuming this video is selected).
                 selectionHighlight.SetActive(!_isFullScreen);
             }
 
             if (_isFullScreen)
             {
-                Debug.Log("[DIAG]   Entering fullscreen.");
                 if (_originalParent == null)
                 {
                     _originalParent = transform.parent;
@@ -216,10 +212,10 @@ namespace DogaShiwakeru
                 if (videoPlayer.targetTexture != null) videoPlayer.targetTexture.Release();
                 videoPlayer.targetTexture = new RenderTexture(Screen.width, Screen.height, 0);
                 videoDisplay.texture = videoPlayer.targetTexture;
+                Debug.Log("Entered fullscreen mode.");
             }
             else
             {
-                Debug.Log("[DIAG]   Exiting fullscreen.");
                 transform.SetParent(_originalParent, true);
                 transform.SetSiblingIndex(_originalSiblingIndex);
                 videoDisplayRectTransform.sizeDelta = _originalSizeDelta;
@@ -231,6 +227,7 @@ namespace DogaShiwakeru
                 if (videoPlayer.targetTexture != null) videoPlayer.targetTexture.Release();
                 videoPlayer.targetTexture = new RenderTexture(THUMBNAIL_RESOLUTION, THUMBNAIL_RESOLUTION, 0);
                 videoDisplay.texture = videoPlayer.targetTexture;
+                Debug.Log("Exited fullscreen mode.");
             }
             return _isFullScreen;
         }
