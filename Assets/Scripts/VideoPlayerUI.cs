@@ -18,6 +18,7 @@ namespace DogaShiwakeru
 
         private string _videoPath;
         private bool _isMuted = true;
+        private float _volume = 1.0f;
         private bool _isFullScreen = false;
         private Vector2 _originalSizeDelta;
         private Vector3 _originalLocalScale;
@@ -103,10 +104,11 @@ namespace DogaShiwakeru
         private void OnPrepareCompleted(VideoPlayer source)
         {
             Debug.Log($"Video prepared: {Path.GetFileName(source.url)}. Applying initial mute state ({_isMuted}).");
-            // Ensure mute state is applied before playing
+            // Ensure mute state and volume is applied before playing
             for (ushort i = 0; i < source.audioTrackCount; i++)
             {
                 source.SetDirectAudioMute(i, _isMuted);
+                source.SetDirectAudioVolume(i, _volume);
             }
             source.Play();
             Debug.Log($"Now playing: {Path.GetFileName(source.url)}");
@@ -135,6 +137,17 @@ namespace DogaShiwakeru
         public void ToggleMute()
         {
             SetMute(!_isMuted);
+        }
+        
+        public void SetVolume(float volume)
+        {
+            _volume = Mathf.Clamp01(volume);
+            if (!videoPlayer.isPrepared) return;
+
+            for (ushort i = 0; i < videoPlayer.audioTrackCount; i++)
+            {
+                videoPlayer.SetDirectAudioVolume(i, _volume);
+            }
         }
 
         public void SetMute(bool mute)

@@ -18,6 +18,18 @@ namespace DogaShiwakeru
 
         private string _currentVideoDirectory;
         private bool _isCurrentlyFullscreen = false;
+        private float _currentVolume = 1.0f;
+
+        // For OnGUI filename display
+        private string _fullscreenDisplayFileName = "";
+        private float _fileNameDisplayTimer = 0f;
+        private const float FILENAME_DISPLAY_DURATION = 3.0f; // 3 seconds
+        private int _lastSelectedIndex = -1;
+
+        // For OnGUI volume display
+        private string _volumeDisplayText = "";
+        private float _volumeDisplayTimer = 0f;
+        private const float VOLUME_DISPLAY_DURATION = 2.0f; // 2 seconds
 
         void Start()
         {
@@ -159,6 +171,7 @@ namespace DogaShiwakeru
             {
                 videoGridManager.DisplayVideos(videoFiles);
                 UpdateVideoCountDisplay(videoFiles.Count);
+                ApplyGlobalVolume(); // Set initial volume for all loaded videos
 
                 // After loading, select the first video by default
                 if (videoFiles.Count > 0)
@@ -185,32 +198,187 @@ namespace DogaShiwakeru
             }
         }
 
-        void Update()
-        {
-            if (videoGridManager == null) return;
+                void Update()
 
-                                    // Handle selection movement
+                {
 
-                                    if (Input.GetKeyDown(KeyCode.LeftArrow))
+                    if (videoGridManager == null) return;
 
-                                    {
+        
 
-                                        videoGridManager.MoveSelection(-1, _isCurrentlyFullscreen);
+                    // --- Logic to detect video switch and trigger filename display ---
 
-                                    }
+                    int currentSelectedIndex = videoGridManager.GetSelectedVideoIndex();
 
-                                    else if (Input.GetKeyDown(KeyCode.RightArrow))
+                    if (currentSelectedIndex != _lastSelectedIndex)
 
-                                    {
+                    {
 
-                                        videoGridManager.MoveSelection(1, _isCurrentlyFullscreen);
+                        if (_isCurrentlyFullscreen && currentSelectedIndex != -1)
 
-                                    }
+                        {
 
-            // Handle deselect all
-            if (Input.GetKeyDown(KeyCode.Escape))
-            {
-                videoGridManager.DeselectAll(_isCurrentlyFullscreen);
+                            var selectedVideo = videoGridManager.GetVideoUI(currentSelectedIndex);
+
+                            if (selectedVideo != null)
+
+                            {
+
+                                _fullscreenDisplayFileName = Path.GetFileName(selectedVideo.GetVideoPath());
+
+                                _fileNameDisplayTimer = FILENAME_DISPLAY_DURATION;
+
+                            }
+
+                        }
+
+                        _lastSelectedIndex = currentSelectedIndex;
+
+                    }
+
+        
+
+                    if (_fileNameDisplayTimer > 0)
+
+                    {
+
+                        _fileNameDisplayTimer -= Time.deltaTime;
+
+                    }
+
+        
+
+                    // Handle selection movement and seeking
+
+                    if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.RightArrow))
+
+                    {
+
+                        bool isShiftPressed = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+
+                                                    bool isCtrlPressed = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+
+                                                    VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+
+                                    
+
+                                                    // --- Seeking Logic ---
+
+                                                    if (selectedVideo != null && (isShiftPressed || isCtrlPressed))
+
+                                                    {
+
+                                                        float seekSeconds = 0;
+
+                                                        if (isCtrlPressed)
+
+                                                        {
+
+                                                            seekSeconds = 60.0f; // 1 minute
+
+                                                        }
+
+                                                        else // isShiftPressed
+
+                                                        {
+
+                                                            seekSeconds = 5.0f; // 5 seconds
+
+                                                        }
+
+                                    
+
+                                                        if (Input.GetKeyDown(KeyCode.LeftArrow))
+
+                                                        {
+
+                                                            selectedVideo.Seek(-seekSeconds);
+
+                                                        }
+
+                                                        else
+
+                                                        {
+
+                                                            selectedVideo.Seek(seekSeconds);
+
+                                                        }
+
+                                                    }
+
+                                                    // --- Selection Movement Logic ---
+
+                                                                    else
+
+                                                                    {
+
+                                                                        int direction = Input.GetKeyDown(KeyCode.LeftArrow) ? -1 : 1;
+
+                                                                        videoGridManager.MoveSelection(direction, _isCurrentlyFullscreen);
+
+                                                                    }
+
+                                                                }
+
+                                                                
+
+                                                                // Handle Volume Control
+
+                                                                if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.DownArrow))
+
+                                                                {
+
+                                                                    if (Input.GetKeyDown(KeyCode.UpArrow))
+
+                                                                    {
+
+                                                                        _currentVolume += 0.1f;
+
+                                                                    }
+
+                                                                    else
+
+                                                                    {
+
+                                                                        _currentVolume -= 0.1f;
+
+                                                                    }
+
+                                                                                    _currentVolume = Mathf.Clamp01(_currentVolume);
+
+                                                                                    
+
+                                                                                    _volumeDisplayText = $"Volume: {_currentVolume:P0}";
+
+                                                                                    _volumeDisplayTimer = VOLUME_DISPLAY_DURATION;
+
+                                                                    
+
+                                                                                    Debug.Log($"Volume set to: {_currentVolume:P0}");
+
+                                                                                    ApplyGlobalVolume();
+
+                                                                                }
+
+                                                                    
+
+                                                                                if (_volumeDisplayTimer > 0)
+
+                                                                                {
+
+                                                                                    _volumeDisplayTimer -= Time.deltaTime;
+
+                                                                                }
+
+                                                                    
+
+                                                                                // Handle deselect all
+
+                                                                                if (Input.GetKeyDown(KeyCode.Escape))
+
+                                                                                {
+
+                                                                                    videoGridManager.DeselectAll(_isCurrentlyFullscreen);
                 // After deselecting, we are no longer in fullscreen mode.
                 if (_isCurrentlyFullscreen)
                 {
@@ -321,6 +489,59 @@ namespace DogaShiwakeru
                 {
                     Debug.LogWarning("No video selected or Canvas RectTransform not assigned for Fullscreen operation.");
                 }
+            }
+        }
+
+        private void ApplyGlobalVolume()
+        {
+            for (int i = 0; i < videoGridManager.GetVideoCount(); i++)
+            {
+                VideoPlayerUI videoUI = videoGridManager.GetVideoUI(i);
+                if (videoUI != null)
+                {
+                    videoUI.SetVolume(_currentVolume);
+                }
+            }
+        }
+
+        void OnGUI()
+        {
+            if (_isCurrentlyFullscreen && _fileNameDisplayTimer > 0)
+            {
+                // Define a style for the text to ensure it's visible
+                GUIStyle style = new GUIStyle();
+                style.fontSize = 24;
+                style.normal.textColor = Color.white;
+                style.alignment = TextAnchor.UpperCenter;
+
+                // Create a simple drop shadow for better readability by drawing the text in black behind the white text
+                GUI.color = Color.black;
+                Rect shadowRect = new Rect(0, 21, Screen.width, 40);
+                GUI.Label(shadowRect, _fullscreenDisplayFileName, style);
+
+                // Draw the main text in white
+                GUI.color = Color.white;
+                Rect textRect = new Rect(0, 20, Screen.width, 40);
+                GUI.Label(textRect, _fullscreenDisplayFileName, style);
+            }
+
+            // Display Volume Level
+            if (_volumeDisplayTimer > 0)
+            {
+                GUIStyle volumeStyle = new GUIStyle();
+                volumeStyle.fontSize = 24;
+                volumeStyle.normal.textColor = Color.white;
+                volumeStyle.alignment = TextAnchor.LowerCenter;
+
+                // Shadow
+                GUI.color = Color.black;
+                Rect shadowRect = new Rect(0, Screen.height - 41, Screen.width, 40);
+                GUI.Label(shadowRect, _volumeDisplayText, volumeStyle);
+
+                // Main text
+                GUI.color = Color.white;
+                Rect textRect = new Rect(0, Screen.height - 40, Screen.width, 40);
+                GUI.Label(textRect, _volumeDisplayText, volumeStyle);
             }
         }
     }
