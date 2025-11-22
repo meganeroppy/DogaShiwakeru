@@ -41,7 +41,6 @@ namespace DogaShiwakeru
 
         void Start()
         {
-            Debug.Log("MainController started.");
             _videoLoader = new VideoLoader();
             _videoFileManager = new VideoFileManager();
             _currentVolume = PlayerPrefs.GetFloat(VOLUME_KEY, 1.0f);
@@ -71,7 +70,7 @@ namespace DogaShiwakeru
             }
             else
             {
-                _currentVideoDirectory = string.Empty; // Clear current directory on cancel
+                _currentVideoDirectory = string.Empty;
                 videoGridManager.DisplayVideos(new List<string>());
                 UpdateVideoCountDisplay(0);
             }
@@ -135,7 +134,39 @@ namespace DogaShiwakeru
 
             if (_volumeDisplayTimer > 0) _volumeDisplayTimer -= Time.deltaTime;
 
-            if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.RightArrow))
+            // --- Input Handling with Priority ---
+            bool isFullscreen = videoGridManager.IsFullscreen();
+
+            if (Input.GetKeyDown(KeyCode.D))
+            {
+                HandleFileOperation(Path.Combine(_currentVideoDirectory, "del"), isFullscreen);
+            }
+            else if (Input.GetKeyDown(KeyCode.N))
+            {
+                HandleFileOperation(Path.Combine(_currentVideoDirectory, "nice"), isFullscreen);
+            }
+            else if (Input.GetKeyDown(KeyCode.S))
+            {
+                if (videoGridManager.GetSelectedVideoUI() != null)
+                {
+                    _isSaveModeActive = true;
+                    _saveModeInputString = "";
+                    _saveModeSuggestionIndex = -1;
+                    UpdateSaveSuggestions();
+                }
+            }
+            else if (Input.GetKeyDown(KeyCode.R))
+            {
+                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+                if (selectedVideo != null)
+                {
+                    _isRenameModeActive = true;
+                    _saveModeInputString = Path.GetFileName(selectedVideo.GetVideoPath());
+                    _saveModeSuggestions.Clear();
+                    _saveModeSuggestionIndex = -1;
+                }
+            }
+            else if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.RightArrow))
             {
                 bool isCtrlPressed = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
                 if (isCtrlPressed)
@@ -153,8 +184,7 @@ namespace DogaShiwakeru
                     }
                 }
             }
-
-            if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.DownArrow))
+            else if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.DownArrow))
             {
                 _currentVolume += Input.GetKeyDown(KeyCode.UpArrow) ? 0.1f : -0.1f;
                 _currentVolume = Mathf.Clamp01(_currentVolume);
@@ -164,64 +194,40 @@ namespace DogaShiwakeru
                 PlayerPrefs.SetFloat(VOLUME_KEY, _currentVolume);
                 PlayerPrefs.Save();
             }
-
-            if (Input.GetKeyDown(KeyCode.Escape))
+            else if (Input.GetKeyDown(KeyCode.Escape))
             {
                 if (videoGridManager.GetSelectedVideoIndex() == -1) { OpenDirectoryDialog(); } 
                 else { videoGridManager.DeselectOrExitFullscreen(); }
             }
-            
-            if (Input.GetKeyDown(KeyCode.Backspace))
+            else if (Input.GetKeyDown(KeyCode.Backspace))
             {
                 VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
                 if (selectedVideo != null) selectedVideo.videoPlayer.time = 0;
             }
-
-            bool isFullscreen = videoGridManager.IsFullscreen(); 
-            if (Input.GetKeyDown(KeyCode.D)) HandleFileOperation(Path.Combine(_currentVideoDirectory, "del"), isFullscreen);
-            if (Input.GetKeyDown(KeyCode.N)) HandleFileOperation(Path.Combine(_currentVideoDirectory, "nice"), isFullscreen);
-
-            if (Input.GetKeyDown(KeyCode.S))
-            {
-                if (videoGridManager.GetSelectedVideoUI() != null)
-                {
-                    _isSaveModeActive = true;
-                    _saveModeInputString = "";
-                    _saveModeSuggestionIndex = -1;
-                    UpdateSaveSuggestions();
-                }
-            }
-            
-            if (Input.GetKeyDown(KeyCode.R))
-            {
-                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
-                if (selectedVideo != null)
-                {
-                    _isRenameModeActive = true;
-                    _saveModeInputString = Path.GetFileName(selectedVideo.GetVideoPath());
-                    _saveModeSuggestions.Clear();
-                    _saveModeSuggestionIndex = -1;
-                }
-            }
-
-            if (Input.GetKeyDown(KeyCode.O))
+            else if (Input.GetKeyDown(KeyCode.O))
             {
                 VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
                 if (selectedVideo != null) System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{selectedVideo.GetVideoPath()}\"");
             }
-
-            if (Input.GetKeyDown(KeyCode.M))
+            else if (Input.GetKeyDown(KeyCode.M))
             {
                 VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
                 if (selectedVideo != null) selectedVideo.ToggleMute();
             }
-
-            if (Input.GetKeyDown(KeyCode.F))
+            else if (Input.GetKeyDown(KeyCode.F))
             {
                 videoGridManager.ToggleFullscreenOnSelected();
             }
-
-            if (Input.GetKeyDown(KeyCode.G))
+            else if (Input.GetKeyDown(KeyCode.Space))
+            {
+                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+                if (selectedVideo != null)
+                {
+                    if (selectedVideo.videoPlayer.isPlaying) { selectedVideo.Pause(); } 
+                    else { selectedVideo.Play(); }
+                }
+            }
+            else if (Input.GetKeyDown(KeyCode.G))
             {
                 VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
                 if (selectedVideo != null)

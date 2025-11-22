@@ -126,6 +126,11 @@ namespace DogaShiwakeru
             videoPlayer.Pause();
         }
 
+        public void Play()
+        {
+            videoPlayer.Play();
+        }
+
         public void Seek(float seconds)
         {
             if (videoPlayer.isPrepared)
