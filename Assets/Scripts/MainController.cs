@@ -189,15 +189,23 @@ namespace DogaShiwakeru
         {
             if (videoGridManager == null) return;
 
-            // Handle selection movement
-            if (Input.GetKeyDown(KeyCode.LeftArrow))
-            {
-                videoGridManager.MoveSelection(-1, _isCurrentlyFullscreen);
-            }
-            else if (Input.GetKeyDown(KeyCode.RightArrow))
-            {
-                videoGridManager.MoveSelection(1, _isCurrentlyFullscreen);
-            }
+                                    // Handle selection movement
+
+                                    if (Input.GetKeyDown(KeyCode.LeftArrow))
+
+                                    {
+
+                                        videoGridManager.MoveSelection(-1, _isCurrentlyFullscreen);
+
+                                    }
+
+                                    else if (Input.GetKeyDown(KeyCode.RightArrow))
+
+                                    {
+
+                                        videoGridManager.MoveSelection(1, _isCurrentlyFullscreen);
+
+                                    }
 
             // Handle deselect all
             if (Input.GetKeyDown(KeyCode.Escape))

@@ -61,32 +61,38 @@ namespace DogaShiwakeru
 
         public void SetSelectedVideo(int index, bool isFullscreenMode)
         {
-            if (_selectedVideoIndex == index) return; // No change if re-selecting the same video
+            if (_selectedVideoIndex == index) return;
 
-            // Deselect the old video
+            // --- Deselect the Old Video ---
             if (_selectedVideoIndex != -1 && _selectedVideoIndex < _currentVideoUIs.Count)
             {
                 var oldSelectedUI = _currentVideoUIs[_selectedVideoIndex];
-                oldSelectedUI.SetSelected(false);
-                oldSelectedUI.SetMute(true);
-                oldSelectedUI.SetPlaybackSpeed(0.1f);
-                // If in fullscreen mode, the old video must exit fullscreen.
+                
+                // If we are switching videos in fullscreen, the old one must exit fullscreen first.
                 if (isFullscreenMode)
                 {
                     oldSelectedUI.ToggleFullscreen(canvasRectTransform);
                 }
+                
+                // Now that its state is correct (not fullscreen), formally deselect it.
+                oldSelectedUI.SetSelected(false);
+                oldSelectedUI.SetMute(true);
+                oldSelectedUI.SetPlaybackSpeed(0.1f);
             }
 
             _selectedVideoIndex = index;
 
-            // Select the new video
+            // --- Select the New Video ---
             if (_selectedVideoIndex != -1 && _selectedVideoIndex < _currentVideoUIs.Count)
             {
                 var newSelectedUI = _currentVideoUIs[_selectedVideoIndex];
+
+                // Formally select it first so its state is correct.
                 newSelectedUI.SetSelected(true);
                 newSelectedUI.SetMute(false); // Always unmute the selected video
                 newSelectedUI.SetPlaybackSpeed(1.0f);
-                // If in fullscreen mode, the new video must enter fullscreen.
+
+                // If we are supposed to be in fullscreen, now tell the new video to enter it.
                 if (isFullscreenMode)
                 {
                     newSelectedUI.ToggleFullscreen(canvasRectTransform);

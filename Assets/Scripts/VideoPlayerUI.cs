@@ -160,8 +160,8 @@ namespace DogaShiwakeru
                 // Show highlight only if selected AND not in fullscreen.
                 selectionHighlight.SetActive(isSelected && !_isFullScreen);
             }
-            // Show progress UI if selected OR if already in fullscreen.
-            UpdateProgressUI(isSelected || _isFullScreen);
+            // Show progress UI only if in fullscreen.
+            UpdateProgressUI(_isFullScreen);
         }
 
         public bool ToggleFullscreen(RectTransform canvasRectTransform)
@@ -169,11 +169,10 @@ namespace DogaShiwakeru
             _isFullScreen = !_isFullScreen;
             
             // Update UI visibility based on the new fullscreen state.
-            // A selected video (which this is) should always show progress.
-            // The highlight should only be visible when NOT in fullscreen.
-            UpdateProgressUI(true); 
+            UpdateProgressUI(_isFullScreen); 
             if (selectionHighlight != null)
             {
+                // Highlight is active only when NOT in fullscreen (assuming this video is selected).
                 selectionHighlight.SetActive(!_isFullScreen);
             }
 
