@@ -164,7 +164,7 @@ namespace DogaShiwakeru
             }
         }
 
-        private void LoadVideos(string directoryPath)
+        private void LoadVideos(string directoryPath, int indexToSelectAfterLoad = 0)
         {
             var videoFiles = _videoLoader.LoadVideosFromDirectory(directoryPath);
             if (videoGridManager != null)
@@ -173,10 +173,20 @@ namespace DogaShiwakeru
                 UpdateVideoCountDisplay(videoFiles.Count);
                 ApplyGlobalVolume(); // Set initial volume for all loaded videos
 
-                // After loading, select the first video by default
+                // After loading, select the appropriate video.
                 if (videoFiles.Count > 0)
                 {
-                    videoGridManager.SetSelectedVideo(0, _isCurrentlyFullscreen);
+                    int newCount = videoFiles.Count;
+                    int finalIndex = indexToSelectAfterLoad;
+
+                    // If the old index is now out of bounds (we deleted the last item),
+                    // select the new last item.
+                    if (finalIndex >= newCount)
+                    {
+                        finalIndex = newCount - 1;
+                    }
+
+                    videoGridManager.SetSelectedVideo(finalIndex, _isCurrentlyFullscreen);
                 }
             }
             else
@@ -248,77 +258,159 @@ namespace DogaShiwakeru
 
         
 
-                    // Handle selection movement and seeking
+                                // Handle selection movement and seeking
 
-                    if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.RightArrow))
+        
 
-                    {
+                                if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.RightArrow))
 
-                        bool isShiftPressed = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+        
 
-                                                    bool isCtrlPressed = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+                                {
 
-                                                    VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+        
 
-                                    
+                                    bool isShiftPressed = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
 
-                                                    // --- Seeking Logic ---
+        
 
-                                                    if (selectedVideo != null && (isShiftPressed || isCtrlPressed))
+                                    bool isCtrlPressed = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
 
-                                                    {
-
-                                                        float seekSeconds = 0;
-
-                                                        if (isCtrlPressed)
-
-                                                        {
-
-                                                            seekSeconds = 60.0f; // 1 minute
-
-                                                        }
-
-                                                        else // isShiftPressed
-
-                                                        {
-
-                                                            seekSeconds = 5.0f; // 5 seconds
-
-                                                        }
+        
 
                                     
 
-                                                        if (Input.GetKeyDown(KeyCode.LeftArrow))
+        
 
-                                                        {
+                                    // --- Selection Movement Logic (now with Ctrl) ---
 
-                                                            selectedVideo.Seek(-seekSeconds);
+        
 
-                                                        }
+                                    if (isCtrlPressed)
 
-                                                        else
+        
 
-                                                        {
+                                    {
 
-                                                            selectedVideo.Seek(seekSeconds);
+        
 
-                                                        }
+                                        int direction = Input.GetKeyDown(KeyCode.LeftArrow) ? -1 : 1;
 
-                                                    }
+        
 
-                                                    // --- Selection Movement Logic ---
+                                        videoGridManager.MoveSelection(direction, _isCurrentlyFullscreen);
 
-                                                                    else
+        
 
-                                                                    {
+                                    }
 
-                                                                        int direction = Input.GetKeyDown(KeyCode.LeftArrow) ? -1 : 1;
+        
 
-                                                                        videoGridManager.MoveSelection(direction, _isCurrentlyFullscreen);
+                                    // --- Seeking Logic (default and Shift) ---
 
-                                                                    }
+        
 
-                                                                }
+                                    else
+
+        
+
+                                    {
+
+        
+
+                                        VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+
+        
+
+                                        if (selectedVideo != null)
+
+        
+
+                                        {
+
+        
+
+                                            float seekSeconds = 0;
+
+        
+
+                                            if (isShiftPressed)
+
+        
+
+                                            {
+
+        
+
+                                                seekSeconds = 300.0f; // 5 minutes
+
+        
+
+                                            }
+
+        
+
+                                            else // No modifier
+
+        
+
+                                            {
+
+        
+
+                                                seekSeconds = 10.0f; // 10 seconds
+
+        
+
+                                            }
+
+        
+
+                    
+
+        
+
+                                            if (Input.GetKeyDown(KeyCode.LeftArrow))
+
+        
+
+                                            {
+
+        
+
+                                                selectedVideo.Seek(-seekSeconds);
+
+        
+
+                                            }
+
+        
+
+                                            else
+
+        
+
+                                            {
+
+        
+
+                                                selectedVideo.Seek(seekSeconds);
+
+        
+
+                                            }
+
+        
+
+                                        }
+
+        
+
+                                    }
+
+        
+
+                                }
 
                                                                 
 
@@ -392,6 +484,7 @@ namespace DogaShiwakeru
                 VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
                 if (selectedVideo != null && !string.IsNullOrEmpty(_currentVideoDirectory))
                 {
+                    int currentIndex = videoGridManager.GetSelectedVideoIndex();
                     string sourcePath = selectedVideo.GetVideoPath();
 
                     if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
@@ -400,7 +493,7 @@ namespace DogaShiwakeru
                         if (_videoFileManager.DeleteVideoFile(sourcePath))
                         {
                             Debug.Log($"Video permanently deleted: {sourcePath}");
-                            LoadVideos(_currentVideoDirectory); // Refresh the list
+                            LoadVideos(_currentVideoDirectory, currentIndex); // Refresh the list
                         }
                     }
                     else
@@ -411,7 +504,7 @@ namespace DogaShiwakeru
                         if (_videoFileManager.MoveVideoFile(sourcePath, delFolderPath))
                         {
                             Debug.Log($"Video moved to 'del' folder: {sourcePath}");
-                            LoadVideos(_currentVideoDirectory); // Refresh the list
+                            LoadVideos(_currentVideoDirectory, currentIndex); // Refresh the list
                         }
                     }
                 }
@@ -427,13 +520,14 @@ namespace DogaShiwakeru
                 VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
                 if (selectedVideo != null && !string.IsNullOrEmpty(_currentVideoDirectory))
                 {
+                    int currentIndex = videoGridManager.GetSelectedVideoIndex();
                     string sourcePath = selectedVideo.GetVideoPath();
                     string niceFolderPath = Path.Combine(_currentVideoDirectory, "nice");
 
                     if (_videoFileManager.MoveVideoFile(sourcePath, niceFolderPath))
                     {
                         Debug.Log($"Video moved to 'nice' folder: {sourcePath}");
-                        LoadVideos(_currentVideoDirectory); // Refresh the list
+                        LoadVideos(_currentVideoDirectory, currentIndex); // Refresh the list
                     }
                 }
                 else
