@@ -59,7 +59,7 @@ namespace DogaShiwakeru
 
         public RectTransform canvasRectTransform; // Assign from MainController
 
-        public void SetSelectedVideo(int index, bool isMutedGlobally, bool isFullscreenMode)
+        public void SetSelectedVideo(int index, bool isFullscreenMode)
         {
             if (_selectedVideoIndex == index) return; // No change if re-selecting the same video
 
@@ -84,7 +84,7 @@ namespace DogaShiwakeru
             {
                 var newSelectedUI = _currentVideoUIs[_selectedVideoIndex];
                 newSelectedUI.SetSelected(true);
-                newSelectedUI.SetMute(isMutedGlobally);
+                newSelectedUI.SetMute(false); // Always unmute the selected video
                 newSelectedUI.SetPlaybackSpeed(1.0f);
                 // If in fullscreen mode, the new video must enter fullscreen.
                 if (isFullscreenMode)
@@ -113,7 +113,7 @@ namespace DogaShiwakeru
             return _selectedVideoIndex;
         }
 
-        public void MoveSelection(int direction, bool isMutedGlobally, bool isFullscreenMode) // -1 for left, 1 for right
+        public void MoveSelection(int direction, bool isFullscreenMode) // -1 for left, 1 for right
         {
             if (_currentVideoUIs.Count == 0) return;
 
@@ -129,7 +129,7 @@ namespace DogaShiwakeru
                 else if (newIndex >= _currentVideoUIs.Count) newIndex = 0;
             }
 
-            SetSelectedVideo(newIndex, isMutedGlobally, isFullscreenMode);
+            SetSelectedVideo(newIndex, isFullscreenMode);
         }
 
         public void DeselectAll(bool isFullscreenMode)
@@ -139,7 +139,7 @@ namespace DogaShiwakeru
             {
                 _currentVideoUIs[_selectedVideoIndex].ToggleFullscreen(canvasRectTransform);
             }
-            SetSelectedVideo(-1, true, false); // Always exit fullscreen mode logic when deselecting
+            SetSelectedVideo(-1, false); // Always exit fullscreen mode logic when deselecting
         }
     }
 }

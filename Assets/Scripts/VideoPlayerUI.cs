@@ -132,6 +132,11 @@ namespace DogaShiwakeru
             }
         }
 
+        public void ToggleMute()
+        {
+            SetMute(!_isMuted);
+        }
+
         public void SetMute(bool mute)
         {
             _isMuted = mute;
@@ -152,9 +157,10 @@ namespace DogaShiwakeru
         {
             if (selectionHighlight != null)
             {
-                selectionHighlight.SetActive(isSelected);
+                // Show highlight only if selected AND not in fullscreen.
+                selectionHighlight.SetActive(isSelected && !_isFullScreen);
             }
-            // Show progress UI if selected OR if already in fullscreen
+            // Show progress UI if selected OR if already in fullscreen.
             UpdateProgressUI(isSelected || _isFullScreen);
         }
 
@@ -162,8 +168,14 @@ namespace DogaShiwakeru
         {
             _isFullScreen = !_isFullScreen;
             
-            // Show/Hide progress UI based on new fullscreen state
-            UpdateProgressUI(_isFullScreen);
+            // Update UI visibility based on the new fullscreen state.
+            // A selected video (which this is) should always show progress.
+            // The highlight should only be visible when NOT in fullscreen.
+            UpdateProgressUI(true); 
+            if (selectionHighlight != null)
+            {
+                selectionHighlight.SetActive(!_isFullScreen);
+            }
 
             if (_isFullScreen)
             {
@@ -200,11 +212,6 @@ namespace DogaShiwakeru
                 videoPlayer.targetTexture = new RenderTexture(256, 256, 0);
                 videoDisplay.texture = videoPlayer.targetTexture;
                 
-                // After exiting, visibility should be based on selection status again.
-                // We find out the selection status from the active state of the highlight.
-                bool isSelected = selectionHighlight != null && selectionHighlight.activeSelf;
-                UpdateProgressUI(isSelected);
-
                 Debug.Log("Exited fullscreen mode.");
             }
             return _isFullScreen;

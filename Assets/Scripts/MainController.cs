@@ -17,7 +17,6 @@ namespace DogaShiwakeru
         public string initialVideoPath; // Assign a video path in the Inspector to load on start
 
         private string _currentVideoDirectory;
-        private bool _isMuted = false; // Global mute state
         private bool _isCurrentlyFullscreen = false;
 
         void Start()
@@ -55,7 +54,7 @@ namespace DogaShiwakeru
                     UpdateVideoCountDisplay(singleVideoList.Count);
                     if (singleVideoList.Count > 0)
                     {
-                        videoGridManager.SetSelectedVideo(0, _isMuted, _isCurrentlyFullscreen);
+                        videoGridManager.SetSelectedVideo(0, _isCurrentlyFullscreen);
                     }
                     return; // Success, exit Start()
                 }
@@ -89,7 +88,7 @@ namespace DogaShiwakeru
                     UpdateVideoCountDisplay(singleVideoList.Count);
                     if (singleVideoList.Count > 0)
                     {
-                        videoGridManager.SetSelectedVideo(0, _isMuted, _isCurrentlyFullscreen);
+                        videoGridManager.SetSelectedVideo(0, _isCurrentlyFullscreen);
                     }
                     return; // Success, exit Start()
                 }
@@ -164,7 +163,7 @@ namespace DogaShiwakeru
                 // After loading, select the first video by default
                 if (videoFiles.Count > 0)
                 {
-                    videoGridManager.SetSelectedVideo(0, _isMuted, _isCurrentlyFullscreen);
+                    videoGridManager.SetSelectedVideo(0, _isCurrentlyFullscreen);
                 }
             }
             else
@@ -186,19 +185,6 @@ namespace DogaShiwakeru
             }
         }
 
-        private void ApplyGlobalMuteState()
-        {
-            for (int i = 0; i < videoGridManager.GetVideoCount(); i++)
-            {
-                VideoPlayerUI videoUI = videoGridManager.GetVideoUI(i);
-                if (videoUI != null && videoGridManager.GetSelectedVideoIndex() != i)
-                {
-                    videoUI.SetMute(_isMuted);
-                }
-            }
-            // Ensure the selected video's mute state is handled by its selection logic
-        }
-
         void Update()
         {
             if (videoGridManager == null) return;
@@ -206,11 +192,11 @@ namespace DogaShiwakeru
             // Handle selection movement
             if (Input.GetKeyDown(KeyCode.LeftArrow))
             {
-                videoGridManager.MoveSelection(-1, _isMuted, _isCurrentlyFullscreen);
+                videoGridManager.MoveSelection(-1, _isCurrentlyFullscreen);
             }
             else if (Input.GetKeyDown(KeyCode.RightArrow))
             {
-                videoGridManager.MoveSelection(1, _isMuted, _isCurrentlyFullscreen);
+                videoGridManager.MoveSelection(1, _isCurrentlyFullscreen);
             }
 
             // Handle deselect all
@@ -307,16 +293,11 @@ namespace DogaShiwakeru
             // Handle Mute/Unmute (M key)
             if (Input.GetKeyDown(KeyCode.M))
             {
-                _isMuted = !_isMuted;
-                ApplyGlobalMuteState();
-
-                // Reapply selection state to handle selected video's mute/unmute correctly
-                int selectedIndex = videoGridManager.GetSelectedVideoIndex();
-                if (selectedIndex != -1)
+                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+                if (selectedVideo != null)
                 {
-                    videoGridManager.SetSelectedVideo(selectedIndex, _isMuted, _isCurrentlyFullscreen); // Pass the new mute state
+                    selectedVideo.ToggleMute();
                 }
-                Debug.Log($"Global mute toggled: {_isMuted}");
             }
 
             // Handle Fullscreen (F key)
