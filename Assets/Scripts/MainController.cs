@@ -31,6 +31,12 @@ namespace DogaShiwakeru
         private float _volumeDisplayTimer = 0f;
         private const float VOLUME_DISPLAY_DURATION = 2.0f; // 2 seconds
 
+        // For Save Mode
+        private bool _isSaveModeActive = false;
+        private string _saveModeInputString = "";
+        private List<string> _saveModeSuggestions = new List<string>();
+        private int _saveModeSuggestionIndex = -1;
+
         void Start()
         {
             Debug.Log("MainController started.");
@@ -208,383 +214,895 @@ namespace DogaShiwakeru
             }
         }
 
-                void Update()
+                                        void Update()
 
-                {
+                                        {
 
-                    if (videoGridManager == null) return;
+                                            if (videoGridManager == null) return;
 
-        
+                                            HandleNormalInput();
 
-                    // --- Logic to detect video switch and trigger filename display ---
+                                        }
 
-                    int currentSelectedIndex = videoGridManager.GetSelectedVideoIndex();
+                
 
-                    if (currentSelectedIndex != _lastSelectedIndex)
-
-                    {
-
-                        if (_isCurrentlyFullscreen && currentSelectedIndex != -1)
+                        private void HandleNormalInput()
 
                         {
 
-                            var selectedVideo = videoGridManager.GetVideoUI(currentSelectedIndex);
+                            // --- Logic to detect video switch and trigger filename display ---
 
-                            if (selectedVideo != null)
+                            int currentSelectedIndex = videoGridManager.GetSelectedVideoIndex();
+
+                            if (currentSelectedIndex != _lastSelectedIndex)
 
                             {
 
-                                _fullscreenDisplayFileName = Path.GetFileName(selectedVideo.GetVideoPath());
+                                if (_isCurrentlyFullscreen && currentSelectedIndex != -1)
 
-                                _fileNameDisplayTimer = FILENAME_DISPLAY_DURATION;
+                                {
+
+                                    var selectedVideo = videoGridManager.GetVideoUI(currentSelectedIndex);
+
+                                    if (selectedVideo != null)
+
+                                    {
+
+                                        _fullscreenDisplayFileName = Path.GetFileName(selectedVideo.GetVideoPath());
+
+                                        _fileNameDisplayTimer = FILENAME_DISPLAY_DURATION;
+
+                                    }
+
+                                }
+
+                                _lastSelectedIndex = currentSelectedIndex;
+
+                            }
+
+                
+
+                            if (_fileNameDisplayTimer > 0)
+
+                            {
+
+                                _fileNameDisplayTimer -= Time.deltaTime;
+
+                            }
+
+                
+
+                            // Handle selection movement and seeking
+
+                            if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.RightArrow))
+
+                            {
+
+                                bool isShiftPressed = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+
+                                bool isCtrlPressed = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+
+                
+
+                                // --- Selection Movement Logic (now with Ctrl) ---
+
+                                if (isCtrlPressed)
+
+                                {
+
+                                    int direction = Input.GetKeyDown(KeyCode.LeftArrow) ? -1 : 1;
+
+                                    videoGridManager.MoveSelection(direction, _isCurrentlyFullscreen);
+
+                                }
+
+                                // --- Seeking Logic (default and Shift) ---
+
+                                else
+
+                                {
+
+                                    VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+
+                                    if (selectedVideo != null)
+
+                                    {
+
+                                        float seekSeconds = 0;
+
+                                        if (isShiftPressed)
+
+                                        {
+
+                                            seekSeconds = 300.0f; // 5 minutes
+
+                                        }
+
+                                        else // No modifier
+
+                                        {
+
+                                            seekSeconds = 10.0f; // 10 seconds
+
+                                        }
+
+                
+
+                                        if (Input.GetKeyDown(KeyCode.LeftArrow))
+
+                                        {
+
+                                            selectedVideo.Seek(-seekSeconds);
+
+                                        }
+
+                                        else
+
+                                        {
+
+                                            selectedVideo.Seek(seekSeconds);
+
+                                        }
+
+                                    }
+
+                                }
+
+                            }
+
+                
+
+                            // Handle Volume Control
+
+                            if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.DownArrow))
+
+                            {
+
+                                if (Input.GetKeyDown(KeyCode.UpArrow))
+
+                                {
+
+                                    _currentVolume += 0.1f;
+
+                                }
+
+                                else
+
+                                {
+
+                                    _currentVolume -= 0.1f;
+
+                                }
+
+                                _currentVolume = Mathf.Clamp01(_currentVolume);
+
+                
+
+                                _volumeDisplayText = $"Volume: {_currentVolume:P0}";
+
+                                _volumeDisplayTimer = VOLUME_DISPLAY_DURATION;
+
+                
+
+                                Debug.Log($"Volume set to: {_currentVolume:P0}");
+
+                                ApplyGlobalVolume();
+
+                            }
+
+                
+
+                                        if (_volumeDisplayTimer > 0)
+
+                
+
+                                        {
+
+                
+
+                                            _volumeDisplayTimer -= Time.deltaTime;
+
+                
+
+                                        }
+
+                
+
+                            
+
+                
+
+                                        // Handle deselect all
+
+                
+
+                                        if (Input.GetKeyDown(KeyCode.Escape))
+
+                
+
+                                        {
+
+                
+
+                                            videoGridManager.DeselectAll(_isCurrentlyFullscreen);
+
+                
+
+                                            // After deselecting, we are no longer in fullscreen mode.
+
+                
+
+                                            if (_isCurrentlyFullscreen)
+
+                
+
+                                            {
+
+                
+
+                                                _isCurrentlyFullscreen = false;
+
+                
+
+                                            }
+
+                
+
+                                        }
+
+                
+
+                            
+
+                
+
+                            // Handle deselect all
+
+                            if (Input.GetKeyDown(KeyCode.Escape))
+
+                            {
+
+                                videoGridManager.DeselectAll(_isCurrentlyFullscreen);
+
+                                // After deselecting, we are no longer in fullscreen mode.
+
+                                if (_isCurrentlyFullscreen)
+
+                                {
+
+                                    _isCurrentlyFullscreen = false;
+
+                                }
+
+                            }
+
+                
+
+                            // Handle 'Delete Candidate' (D key) and 'Immediate Delete' (Shift+D)
+
+                            if (Input.GetKeyDown(KeyCode.D))
+
+                            {
+
+                                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+
+                                if (selectedVideo != null && !string.IsNullOrEmpty(_currentVideoDirectory))
+
+                                {
+
+                                    int currentIndex = videoGridManager.GetSelectedVideoIndex();
+
+                                    string sourcePath = selectedVideo.GetVideoPath();
+
+                
+
+                                    if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
+
+                                    {
+
+                                        // Immediate Delete (Shift+D)
+
+                                        if (_videoFileManager.DeleteVideoFile(sourcePath))
+
+                                        {
+
+                                            Debug.Log($"Video permanently deleted: {sourcePath}");
+
+                                            LoadVideos(_currentVideoDirectory, currentIndex); // Refresh the list
+
+                                        }
+
+                                    }
+
+                                    else
+
+                                    {
+
+                                        // Delete Candidate (D key)
+
+                                        string delFolderPath = Path.Combine(_currentVideoDirectory, "del");
+
+                
+
+                                        if (_videoFileManager.MoveVideoFile(sourcePath, delFolderPath))
+
+                                        {
+
+                                            Debug.Log($"Video moved to 'del' folder: {sourcePath}");
+
+                                            LoadVideos(_currentVideoDirectory, currentIndex); // Refresh the list
+
+                                        }
+
+                                    }
+
+                                }
+
+                                else
+
+                                {
+
+                                    Debug.LogWarning("No video selected or current directory not set for delete operation.");
+
+                                }
+
+                            }
+
+                
+
+                            // Handle 'Nice Video' (N key)
+
+                            if (Input.GetKeyDown(KeyCode.N))
+
+                            {
+
+                                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+
+                                if (selectedVideo != null && !string.IsNullOrEmpty(_currentVideoDirectory))
+
+                                {
+
+                                    int currentIndex = videoGridManager.GetSelectedVideoIndex();
+
+                                    string sourcePath = selectedVideo.GetVideoPath();
+
+                                    string niceFolderPath = Path.Combine(_currentVideoDirectory, "nice");
+
+                
+
+                                    if (_videoFileManager.MoveVideoFile(sourcePath, niceFolderPath))
+
+                                    {
+
+                                        Debug.Log($"Video moved to 'nice' folder: {sourcePath}");
+
+                                        LoadVideos(_currentVideoDirectory, currentIndex); // Refresh the list
+
+                                    }
+
+                                }
+
+                                else
+
+                                {
+
+                                    Debug.LogWarning("No video selected or current directory not set for 'Nice Video' operation.");
+
+                                }
+
+                            }
+
+                            
+
+                            // Handle 'Save Video' (S key)
+
+                            if (Input.GetKeyDown(KeyCode.S))
+
+                            {
+
+                                if (videoGridManager.GetSelectedVideoUI() != null)
+
+                                {
+
+                                    _isSaveModeActive = true;
+
+                                    _saveModeInputString = "";
+
+                                    _saveModeSuggestionIndex = -1;
+
+                                    UpdateSaveSuggestions();
+
+                                    Debug.Log("Entered Save Mode.");
+
+                                }
+
+                                else
+
+                                {
+
+                                    Debug.LogWarning("No video selected to save.");
+
+                                }
+
+                            }
+
+                
+
+                            // Handle 'Open in Explorer' (O key)
+
+                            if (Input.GetKeyDown(KeyCode.O))
+
+                            {
+
+                                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+
+                                if (selectedVideo != null)
+
+                                {
+
+                                    string videoPath = selectedVideo.GetVideoPath();
+
+                                    if (File.Exists(videoPath))
+
+                                    {
+
+                                        // Open the folder and select the file
+
+                                        System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{videoPath}\"");
+
+                                        Debug.Log($"Opened in Explorer: {videoPath}");
+
+                                    }
+
+                                    else
+
+                                    {
+
+                                        Debug.LogWarning($"File not found for 'Open in Explorer': {videoPath}");
+
+                                    }
+
+                                }
+
+                                else
+
+                                {
+
+                                    Debug.LogWarning("No video selected for 'Open in Explorer' operation.");
+
+                                }
+
+                            }
+
+                
+
+                            // Handle Mute/Unmute (M key)
+
+                            if (Input.GetKeyDown(KeyCode.M))
+
+                            {
+
+                                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+
+                                if (selectedVideo != null)
+
+                                {
+
+                                    selectedVideo.ToggleMute();
+
+                                }
+
+                            }
+
+                
+
+                            // Handle Fullscreen (F key)
+
+                            if (Input.GetKeyDown(KeyCode.F))
+
+                            {
+
+                                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+
+                                if (selectedVideo != null && canvasRectTransform != null)
+
+                                {
+
+                                    // ToggleFullscreen returns the new state
+
+                                    _isCurrentlyFullscreen = selectedVideo.ToggleFullscreen(canvasRectTransform);
+
+                                }
+
+                                else
+
+                                {
+
+                                    Debug.LogWarning("No video selected or Canvas RectTransform not assigned for Fullscreen operation.");
+
+                                }
 
                             }
 
                         }
 
-                        _lastSelectedIndex = currentSelectedIndex;
+                        
 
-                    }
+                                                        private void UpdateSaveSuggestions()
 
-        
-
-                    if (_fileNameDisplayTimer > 0)
-
-                    {
-
-                        _fileNameDisplayTimer -= Time.deltaTime;
-
-                    }
-
-        
-
-                                // Handle selection movement and seeking
-
-        
-
-                                if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.RightArrow))
-
-        
+                        
 
                                 {
 
-        
+                        
 
-                                    bool isShiftPressed = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+                                    _saveModeSuggestions.Clear();
 
-        
+                        
 
-                                    bool isCtrlPressed = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+                                    _saveModeSuggestionIndex = -1;
 
-        
+                        
 
-                                    
+                                    if (string.IsNullOrEmpty(_saveModeInputString) || string.IsNullOrEmpty(_currentVideoDirectory)) return;
 
-        
+                        
 
-                                    // --- Selection Movement Logic (now with Ctrl) ---
+                        
 
-        
+                        
 
-                                    if (isCtrlPressed)
+                                    try
 
-        
-
-                                    {
-
-        
-
-                                        int direction = Input.GetKeyDown(KeyCode.LeftArrow) ? -1 : 1;
-
-        
-
-                                        videoGridManager.MoveSelection(direction, _isCurrentlyFullscreen);
-
-        
-
-                                    }
-
-        
-
-                                    // --- Seeking Logic (default and Shift) ---
-
-        
-
-                                    else
-
-        
+                        
 
                                     {
 
-        
+                        
 
-                                        VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+                                        var subDirs = Directory.GetDirectories(_currentVideoDirectory);
 
-        
+                        
 
-                                        if (selectedVideo != null)
+                                        foreach (var dir in subDirs)
 
-        
+                        
 
                                         {
 
-        
+                        
 
-                                            float seekSeconds = 0;
+                                            string dirName = new DirectoryInfo(dir).Name;
 
-        
+                        
 
-                                            if (isShiftPressed)
+                                            if (dirName.StartsWith(_saveModeInputString, System.StringComparison.OrdinalIgnoreCase))
 
-        
-
-                                            {
-
-        
-
-                                                seekSeconds = 300.0f; // 5 minutes
-
-        
-
-                                            }
-
-        
-
-                                            else // No modifier
-
-        
+                        
 
                                             {
 
-        
+                        
 
-                                                seekSeconds = 10.0f; // 10 seconds
+                                                _saveModeSuggestions.Add(dirName);
 
-        
-
-                                            }
-
-        
-
-                    
-
-        
-
-                                            if (Input.GetKeyDown(KeyCode.LeftArrow))
-
-        
-
-                                            {
-
-        
-
-                                                selectedVideo.Seek(-seekSeconds);
-
-        
+                        
 
                                             }
 
-        
-
-                                            else
-
-        
-
-                                            {
-
-        
-
-                                                selectedVideo.Seek(seekSeconds);
-
-        
-
-                                            }
-
-        
+                        
 
                                         }
 
-        
+                        
+
+                                        if (_saveModeSuggestions.Count > 0)
+
+                        
+
+                                        {
+
+                        
+
+                                            _saveModeSuggestionIndex = 0;
+
+                        
+
+                                        }
+
+                        
 
                                     }
 
-        
+                        
+
+                                    catch(System.Exception e)
+
+                        
+
+                                    {
+
+                        
+
+                                        Debug.LogError($"Error searching for subdirectories: {e.Message}");
+
+                        
+
+                                    }
+
+                        
 
                                 }
 
-                                                                
+                        
 
-                                                                // Handle Volume Control
+                        
 
-                                                                if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.DownArrow))
+                        
 
-                                                                {
+                                                private void PerformSaveAction()
 
-                                                                    if (Input.GetKeyDown(KeyCode.UpArrow))
+                        
 
-                                                                    {
+                        
 
-                                                                        _currentVolume += 0.1f;
+                        
 
-                                                                    }
+                                                {
 
-                                                                    else
+                        
 
-                                                                    {
+                        
 
-                                                                        _currentVolume -= 0.1f;
+                        
 
-                                                                    }
+                                                    // The input string is now the single source of truth,
 
-                                                                                    _currentVolume = Mathf.Clamp01(_currentVolume);
+                        
 
-                                                                                    
+                        
 
-                                                                                    _volumeDisplayText = $"Volume: {_currentVolume:P0}";
+                        
 
-                                                                                    _volumeDisplayTimer = VOLUME_DISPLAY_DURATION;
+                                                    // as Tab key copies suggestions directly into it.
 
-                                                                    
+                        
 
-                                                                                    Debug.Log($"Volume set to: {_currentVolume:P0}");
+                        
 
-                                                                                    ApplyGlobalVolume();
+                        
 
-                                                                                }
+                                                    string targetFolderName = _saveModeInputString.Trim();
 
-                                                                    
+                        
 
-                                                                                if (_volumeDisplayTimer > 0)
+                        
 
-                                                                                {
+                        
 
-                                                                                    _volumeDisplayTimer -= Time.deltaTime;
+                                        
 
-                                                                                }
+                        
 
-                                                                    
+                        
 
-                                                                                // Handle deselect all
+                        
 
-                                                                                if (Input.GetKeyDown(KeyCode.Escape))
+                                                    if (string.IsNullOrEmpty(targetFolderName))
 
-                                                                                {
+                        
 
-                                                                                    videoGridManager.DeselectAll(_isCurrentlyFullscreen);
-                // After deselecting, we are no longer in fullscreen mode.
-                if (_isCurrentlyFullscreen)
-                {
-                    _isCurrentlyFullscreen = false;
-                }
-            }
+                        
 
-            // Handle 'Delete Candidate' (D key) and 'Immediate Delete' (Shift+D)
-            if (Input.GetKeyDown(KeyCode.D))
-            {
-                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
-                if (selectedVideo != null && !string.IsNullOrEmpty(_currentVideoDirectory))
-                {
-                    int currentIndex = videoGridManager.GetSelectedVideoIndex();
-                    string sourcePath = selectedVideo.GetVideoPath();
+                        
 
-                    if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
-                    {
-                        // Immediate Delete (Shift+D)
-                        if (_videoFileManager.DeleteVideoFile(sourcePath))
-                        {
-                            Debug.Log($"Video permanently deleted: {sourcePath}");
-                            LoadVideos(_currentVideoDirectory, currentIndex); // Refresh the list
-                        }
-                    }
-                    else
-                    {
-                        // Delete Candidate (D key)
-                        string delFolderPath = Path.Combine(_currentVideoDirectory, "del");
+                                                    {
 
-                        if (_videoFileManager.MoveVideoFile(sourcePath, delFolderPath))
-                        {
-                            Debug.Log($"Video moved to 'del' folder: {sourcePath}");
-                            LoadVideos(_currentVideoDirectory, currentIndex); // Refresh the list
-                        }
-                    }
-                }
-                else
-                {
-                    Debug.LogWarning("No video selected or current directory not set for delete operation.");
-                }
-            }
+                        
 
-            // Handle 'Nice Video' (N key)
-            if (Input.GetKeyDown(KeyCode.N))
-            {
-                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
-                if (selectedVideo != null && !string.IsNullOrEmpty(_currentVideoDirectory))
-                {
-                    int currentIndex = videoGridManager.GetSelectedVideoIndex();
-                    string sourcePath = selectedVideo.GetVideoPath();
-                    string niceFolderPath = Path.Combine(_currentVideoDirectory, "nice");
+                        
 
-                    if (_videoFileManager.MoveVideoFile(sourcePath, niceFolderPath))
-                    {
-                        Debug.Log($"Video moved to 'nice' folder: {sourcePath}");
-                        LoadVideos(_currentVideoDirectory, currentIndex); // Refresh the list
-                    }
-                }
-                else
-                {
-                    Debug.LogWarning("No video selected or current directory not set for 'Nice Video' operation.");
-                }
-            }
+                        
 
-            // Handle 'Open in Explorer' (O key)
-            if (Input.GetKeyDown(KeyCode.O))
-            {
-                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
-                if (selectedVideo != null)
-                {
-                    string videoPath = selectedVideo.GetVideoPath();
-                    if (File.Exists(videoPath))
-                    {
-                        // Open the folder and select the file
-                        System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{videoPath}\"");
-                        Debug.Log($"Opened in Explorer: {videoPath}");
-                    }
-                    else
-                    {
-                        Debug.LogWarning($"File not found for 'Open in Explorer': {videoPath}");
-                    }
-                }
-                else
-                {
-                    Debug.LogWarning("No video selected for 'Open in Explorer' operation.");
-                }
-            }
+                                                        Debug.LogWarning("Save folder name is empty. Aborting save.");
 
-            // Handle Mute/Unmute (M key)
-            if (Input.GetKeyDown(KeyCode.M))
-            {
-                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
-                if (selectedVideo != null)
-                {
-                    selectedVideo.ToggleMute();
-                }
-            }
+                        
 
-            // Handle Fullscreen (F key)
-            if (Input.GetKeyDown(KeyCode.F))
-            {
-                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
-                if (selectedVideo != null && canvasRectTransform != null)
-                {
-                    // ToggleFullscreen returns the new state
-                    _isCurrentlyFullscreen = selectedVideo.ToggleFullscreen(canvasRectTransform);
-                }
-                else
-                {
-                    Debug.LogWarning("No video selected or Canvas RectTransform not assigned for Fullscreen operation.");
-                }
-            }
-        }
+                        
+
+                        
+
+                                                        _isSaveModeActive = false;
+
+                        
+
+                        
+
+                        
+
+                                                        return;
+
+                        
+
+                        
+
+                        
+
+                                                    }
+
+                        
+
+                        
+
+                        
+
+                                        
+
+                        
+
+                        
+
+                        
+
+                                                    VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+
+                        
+
+                        
+
+                        
+
+                                                    if (selectedVideo == null)
+
+                        
+
+                        
+
+                        
+
+                                                    {
+
+                        
+
+                        
+
+                        
+
+                                                        Debug.LogError("No video selected to save.");
+
+                        
+
+                        
+
+                        
+
+                                                        _isSaveModeActive = false;
+
+                        
+
+                        
+
+                        
+
+                                                        return;
+
+                        
+
+                        
+
+                        
+
+                                                    }
+
+                        
+
+                        
+
+                        
+
+                                        
+
+                        
+
+                        
+
+                        
+
+                                                    int currentIndex = videoGridManager.GetSelectedVideoIndex();
+
+                        
+
+                        
+
+                        
+
+                                                    string sourcePath = selectedVideo.GetVideoPath();
+
+                        
+
+                        
+
+                        
+
+                                                    string destFolderPath = Path.Combine(_currentVideoDirectory, targetFolderName);
+
+                        
+
+                        
+
+                        
+
+                                        
+
+                        
+
+                        
+
+                        
+
+                                                    if (_videoFileManager.MoveVideoFile(sourcePath, destFolderPath))
+
+                        
+
+                        
+
+                        
+
+                                                    {
+
+                        
+
+                        
+
+                        
+
+                                                        Debug.Log($"Video moved to '{destFolderPath}'");
+
+                        
+
+                        
+
+                        
+
+                                                        LoadVideos(_currentVideoDirectory, currentIndex);
+
+                        
+
+                        
+
+                        
+
+                                                    }
+
+                        
+
+                        
+
+                        
+
+                                                    // Even if it fails, exit the mode
+
+                        
+
+                        
+
+                        
+
+                                                    _isSaveModeActive = false;
+
+                        
+
+                        
+
+                        
+
+                                                }
+
+                        
+
+                        
+
+                
 
         private void ApplyGlobalVolume()
         {
@@ -600,42 +1118,92 @@ namespace DogaShiwakeru
 
         void OnGUI()
         {
-            if (_isCurrentlyFullscreen && _fileNameDisplayTimer > 0)
+            // --- Save Mode UI ---
+            if (_isSaveModeActive)
             {
-                // Define a style for the text to ensure it's visible
-                GUIStyle style = new GUIStyle();
-                style.fontSize = 24;
-                style.normal.textColor = Color.white;
-                style.alignment = TextAnchor.UpperCenter;
+                // Handle keyboard events specifically for this GUI window
+                Event e = Event.current;
+                if (e.type == EventType.KeyDown)
+                {
+                    if (e.keyCode == KeyCode.Escape)
+                    {
+                        _isSaveModeActive = false;
+                        Debug.Log("Save Mode cancelled.");
+                        e.Use(); // Consume the event so it's not used elsewhere
+                    }
+                    else if (e.keyCode == KeyCode.Tab)
+                    {
+                        if (_saveModeSuggestions.Count > 0)
+                        {
+                            _saveModeSuggestionIndex = (_saveModeSuggestionIndex + 1) % _saveModeSuggestions.Count;
+                            _saveModeInputString = _saveModeSuggestions[_saveModeSuggestionIndex];
+                            UpdateSaveSuggestions();
+                        }
+                        e.Use();
+                    }
+                    else if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter)
+                    {
+                        PerformSaveAction();
+                        e.Use();
+                    }
+                }
 
-                // Create a simple drop shadow for better readability by drawing the text in black behind the white text
-                GUI.color = Color.black;
-                Rect shadowRect = new Rect(0, 21, Screen.width, 40);
-                GUI.Label(shadowRect, _fullscreenDisplayFileName, style);
-
-                // Draw the main text in white
+                // UI Drawing
+                GUI.color = new Color(0, 0, 0, 0.7f);
+                GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
                 GUI.color = Color.white;
-                Rect textRect = new Rect(0, 20, Screen.width, 40);
-                GUI.Label(textRect, _fullscreenDisplayFileName, style);
+
+                float centerX = Screen.width / 2;
+                float boxWidth = 400;
+                float boxHeight = 300;
+                float boxY = (Screen.height - boxHeight) / 2;
+
+                Rect boxRect = new Rect(centerX - (boxWidth / 2), boxY, boxWidth, boxHeight);
+                GUI.Box(boxRect, "Save to Subfolder");
+
+                GUI.SetNextControlName("SaveInput");
+                GUIStyle inputStyle = new GUIStyle(GUI.skin.textField) { fontSize = 18 };
+                string newText = GUI.TextField(new Rect(boxRect.x + 10, boxRect.y + 30, boxRect.width - 20, 30), _saveModeInputString, inputStyle);
+                if (newText != _saveModeInputString)
+                {
+                    _saveModeInputString = newText;
+                    UpdateSaveSuggestions();
+                }
+                GUI.FocusControl("SaveInput");
+
+                if (_saveModeSuggestions.Count > 0)
+                {
+                    float suggestionY = boxRect.y + 70;
+                    GUIStyle suggestionStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.MiddleLeft };
+                    GUIStyle highlightStyle = new GUIStyle(suggestionStyle) { normal = { textColor = Color.yellow } };
+
+                    for (int i = 0; i < _saveModeSuggestions.Count; i++)
+                    {
+                        Rect suggestionRect = new Rect(boxRect.x + 10, suggestionY + (i * 25), boxRect.width - 20, 25);
+                        GUI.Label(suggestionRect, _saveModeSuggestions[i], (i == _saveModeSuggestionIndex) ? highlightStyle : suggestionStyle);
+                    }
+                }
             }
-
-            // Display Volume Level
-            if (_volumeDisplayTimer > 0)
+            // --- Normal UI (Filename and Volume) ---
+            else
             {
-                GUIStyle volumeStyle = new GUIStyle();
-                volumeStyle.fontSize = 24;
-                volumeStyle.normal.textColor = Color.white;
-                volumeStyle.alignment = TextAnchor.LowerCenter;
+                if (_isCurrentlyFullscreen && _fileNameDisplayTimer > 0)
+                {
+                    GUIStyle style = new GUIStyle { fontSize = 24, normal = { textColor = Color.white }, alignment = TextAnchor.UpperCenter };
+                    GUI.color = Color.black;
+                    GUI.Label(new Rect(0, 21, Screen.width, 40), _fullscreenDisplayFileName, style);
+                    GUI.color = Color.white;
+                    GUI.Label(new Rect(0, 20, Screen.width, 40), _fullscreenDisplayFileName, style);
+                }
 
-                // Shadow
-                GUI.color = Color.black;
-                Rect shadowRect = new Rect(0, Screen.height - 41, Screen.width, 40);
-                GUI.Label(shadowRect, _volumeDisplayText, volumeStyle);
-
-                // Main text
-                GUI.color = Color.white;
-                Rect textRect = new Rect(0, Screen.height - 40, Screen.width, 40);
-                GUI.Label(textRect, _volumeDisplayText, volumeStyle);
+                if (_volumeDisplayTimer > 0)
+                {
+                    GUIStyle volumeStyle = new GUIStyle { fontSize = 24, normal = { textColor = Color.white }, alignment = TextAnchor.LowerCenter };
+                    GUI.color = Color.black;
+                    GUI.Label(new Rect(0, Screen.height - 41, Screen.width, 40), _volumeDisplayText, volumeStyle);
+                    GUI.color = Color.white;
+                    GUI.Label(new Rect(0, Screen.height - 40, Screen.width, 40), _volumeDisplayText, volumeStyle);
+                }
             }
         }
     }
