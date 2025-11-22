@@ -59,32 +59,45 @@ namespace DogaShiwakeru
 
         public void SetSelectedVideo(int index, bool maintainFullscreen = false)
         {
+            Debug.Log($"[DIAG] VideoGridManager.SetSelectedVideo called with index: {index}, maintainFullscreen: {maintainFullscreen}");
             if (_selectedVideoIndex == index) return;
 
-            int oldIndex = _selectedVideoIndex;
-            _selectedVideoIndex = index;
-
-            // --- Activate the New Video FIRST ---
+            // Get safe references to the old and new UI objects
+            VideoPlayerUI oldSelectedUI = null;
             if (_selectedVideoIndex != -1 && _selectedVideoIndex < _currentVideoUIs.Count)
             {
-                var newSelectedUI = _currentVideoUIs[_selectedVideoIndex];
+                oldSelectedUI = _currentVideoUIs[_selectedVideoIndex];
+            }
+
+            _selectedVideoIndex = index;
+
+            VideoPlayerUI newSelectedUI = null;
+            if (_selectedVideoIndex != -1 && _selectedVideoIndex < _currentVideoUIs.Count)
+            {
+                newSelectedUI = _currentVideoUIs[_selectedVideoIndex];
+            }
+
+            Debug.Log($"[DIAG] Old UI: {(oldSelectedUI != null ? oldSelectedUI.name : "null")}, New UI: {(newSelectedUI != null ? newSelectedUI.name : "null")}");
+
+            // --- Process NEW selection FIRST ---
+            if (newSelectedUI != null)
+            {
                 newSelectedUI.SetSelected(true);
                 newSelectedUI.SetMute(false);
                 newSelectedUI.SetPlaybackSpeed(1.0f);
-
                 if (maintainFullscreen)
                 {
+                    Debug.Log($"[DIAG] New UI: maintainFullscreen is true. IsFullscreen() = {newSelectedUI.IsFullscreen()}. Calling ToggleFullscreen.");
                     newSelectedUI.ToggleFullscreen(canvasRectTransform);
                 }
-                Debug.Log($"Selected video at index: {index}");
             }
 
-            // --- Deactivate the Old Video SECOND ---
-            if (oldIndex != -1 && oldIndex < _currentVideoUIs.Count)
+            // --- Process OLD selection SECOND ---
+            if (oldSelectedUI != null)
             {
-                var oldSelectedUI = _currentVideoUIs[oldIndex];
                 if (maintainFullscreen)
                 {
+                    Debug.Log($"[DIAG] Old UI: maintainFullscreen is true. IsFullscreen() = {oldSelectedUI.IsFullscreen()}. Calling ToggleFullscreen.");
                     oldSelectedUI.ToggleFullscreen(canvasRectTransform);
                 }
                 oldSelectedUI.SetSelected(false);

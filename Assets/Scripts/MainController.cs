@@ -93,6 +93,7 @@ namespace DogaShiwakeru
                     PlayerPrefs.Save();
 
                     int finalIndex = Mathf.Clamp(indexToSelectAfterLoad, 0, videoFiles.Count - 1);
+                    Debug.Log($"[DIAG] MainController -> Calling SetSelectedVideo(index: {finalIndex}, forceFullscreen: {forceFullscreen})");
                     videoGridManager.SetSelectedVideo(finalIndex, forceFullscreen);
                 }
                 else
@@ -185,6 +186,11 @@ namespace DogaShiwakeru
                     selectedVideo.videoPlayer.time = 0; // Rewind to start
                     Debug.Log($"Rewound video: {Path.GetFileName(selectedVideo.GetVideoPath())}");
                 }
+            }
+
+            if (Input.GetKeyDown(KeyCode.D) || Input.GetKeyDown(KeyCode.N) || Input.GetKeyDown(KeyCode.S))
+            {
+                 Debug.Log($"[DIAG] File operation key pressed. _isCurrentlyFullscreen = {_isCurrentlyFullscreen}");
             }
 
             if (Input.GetKeyDown(KeyCode.D)) HandleFileOperation(Path.Combine(_currentVideoDirectory, "del"), _isCurrentlyFullscreen);
