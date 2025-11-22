@@ -16,6 +16,8 @@ namespace DogaShiwakeru
         public Slider progressSlider; // Assign a UI Slider in the Inspector
         public TextMeshProUGUI timeDisplayText; // Assign a TextMeshProUGUI in the Inspector
 
+        private const int THUMBNAIL_RESOLUTION = 128;
+
         private string _videoPath;
         private bool _isMuted = true;
         private float _volume = 1.0f;
@@ -41,7 +43,7 @@ namespace DogaShiwakeru
             videoPlayer.playOnAwake = false;
             videoPlayer.isLooping = true;
             videoPlayer.renderMode = VideoRenderMode.RenderTexture;
-            videoPlayer.targetTexture = new RenderTexture(256, 256, 0);
+            videoPlayer.targetTexture = new RenderTexture(THUMBNAIL_RESOLUTION, THUMBNAIL_RESOLUTION, 0);
             videoDisplay.texture = videoPlayer.targetTexture;
 
             videoPlayer.prepareCompleted += OnPrepareCompleted;
@@ -221,7 +223,7 @@ namespace DogaShiwakeru
                 videoDisplayRectTransform.anchorMax = new Vector2(0.5f, 0.5f);
 
                 if (videoPlayer.targetTexture != null) videoPlayer.targetTexture.Release();
-                videoPlayer.targetTexture = new RenderTexture(256, 256, 0);
+                videoPlayer.targetTexture = new RenderTexture(THUMBNAIL_RESOLUTION, THUMBNAIL_RESOLUTION, 0);
                 videoDisplay.texture = videoPlayer.targetTexture;
                 
                 Debug.Log("Exited fullscreen mode.");
