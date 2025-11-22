@@ -97,11 +97,6 @@ namespace DogaShiwakeru
             PlayerPrefs.Save();
             
             RefreshGridDisplay();
-
-            if (!_allVideoPaths.Any())
-            {
-                Debug.LogWarning($"Directory '{directoryPath}' contains no video files.");
-            }
         }
 
         private void RefreshGridDisplay(int indexToSelect = 0, bool forceFullscreen = false)
@@ -132,16 +127,21 @@ namespace DogaShiwakeru
 
             if (_focusResetQueued)
             {
+                Debug.Log("[DIAG] Executing queued focus reset.");
                 EventSystem.current.SetSelectedGameObject(null);
                 _focusResetQueued = false;
             }
+            
+            if (Input.anyKeyDown && !(_isSaveModeActive || _isRenameModeActive || _isNavigateDownModeActive))
+            {
+                string focusedObjectName = EventSystem.current.currentSelectedGameObject ? EventSystem.current.currentSelectedGameObject.name : "null";
+                Debug.Log($"[DIAG-UPDATE] KeyDown detected in Normal Mode. Focused: {focusedObjectName}.");
+            }
 
-            // Deferred actions are always checked
             if (_performSaveQueued) { _performSaveQueued = false; PerformSaveAction(); }
             if (_performRenameQueued) { _performRenameQueued = false; PerformRenameAction(); }
             if (_performNavigateDownQueued) { _performNavigateDownQueued = false; PerformNavigateDownAction(); }
 
-            // Only handle normal input if no modal UI is active
             if (!_isSaveModeActive && !_isRenameModeActive && !_isNavigateDownModeActive)
             {
                 HandleNormalInput();
@@ -164,6 +164,7 @@ namespace DogaShiwakeru
 
             if (Input.GetKeyDown(KeyCode.S))
             {
+                Debug.Log("[DIAG] S key processed.");
                 if (videoGridManager.GetSelectedVideoUI() != null)
                 {
                     _isSaveModeActive = true;
@@ -175,6 +176,7 @@ namespace DogaShiwakeru
             }
             else if (Input.GetKeyDown(KeyCode.R))
             {
+                Debug.Log("[DIAG] R key processed.");
                 VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
                 if (selectedVideo != null)
                 {
@@ -207,7 +209,7 @@ namespace DogaShiwakeru
                 VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
                 if (selectedVideo != null)
                 {
-                    if (selectedVideo.videoPlayer.isPlaying) { selectedVideo.Pause(); }
+                    if (selectedVideo.videoPlayer.isPlaying) { selectedVideo.Pause(); } 
                     else { selectedVideo.Play(); }
                 }
             }
@@ -405,20 +407,22 @@ namespace DogaShiwakeru
         {
             if (_isSaveModeActive || _isRenameModeActive || _isNavigateDownModeActive)
             {
-                // This block handles key events ONLY for the modal UI
                 Event e = Event.current;
                 if (e.type == EventType.KeyDown)
                 {
                     if (e.keyCode == KeyCode.Escape) 
                     { 
+                        Debug.Log("[DIAG-ONGUI] Escape key pressed. Exiting modal.");
                         _isSaveModeActive = false; 
                         _isRenameModeActive = false; 
                         _isNavigateDownModeActive = false;
                         _focusResetQueued = true; 
+                        Input.ResetInputAxes(); // Attempt to reset Input state
                         e.Use(); 
                     }
                     else if (e.keyCode == KeyCode.Tab && (_isSaveModeActive || _isNavigateDownModeActive)) 
-                    {
+                    { 
+                        Debug.Log("[DIAG-ONGUI] Tab key pressed.");
                         if (_modalSuggestions.Count > 0)
                         {
                             _modalSuggestionIndex = (_modalSuggestionIndex + 1) % _modalSuggestions.Count;
@@ -428,6 +432,7 @@ namespace DogaShiwakeru
                     }
                     else if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) 
                     { 
+                        Debug.Log("[DIAG-ONGUI] Enter key pressed.");
                         if (_isRenameModeActive) _performRenameQueued = true; 
                         else if (_isSaveModeActive) _performSaveQueued = true;
                         else if (_isNavigateDownModeActive) _performNavigateDownQueued = true;
