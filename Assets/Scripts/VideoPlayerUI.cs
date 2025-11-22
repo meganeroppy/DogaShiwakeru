@@ -3,7 +3,7 @@ using UnityEngine.UI;
 using UnityEngine.Video;
 using System.IO;
 using System;
-using TMPro; // Required for TextMeshProUGUI
+using TMPro;
 using UnityEngine.EventSystems;
 
 namespace DogaShiwakeru
@@ -14,8 +14,8 @@ namespace DogaShiwakeru
         public VideoPlayer videoPlayer;
         public GameObject selectionHighlight;
         public RectTransform videoDisplayRectTransform;
-        public Slider progressSlider; // Assign a UI Slider in the Inspector
-        public TextMeshProUGUI timeDisplayText; // Assign a TextMeshProUGUI in the Inspector
+        public Slider progressSlider;
+        public TextMeshProUGUI timeDisplayText;
 
         private const int THUMBNAIL_RESOLUTION = 256;
 
@@ -23,6 +23,8 @@ namespace DogaShiwakeru
         private bool _isMuted = true;
         private float _volume = 1.0f;
         private bool _isFullScreen = false;
+        private bool _isActivated = false; // Flag to check if player is prepared/preparing
+
         private Vector2 _originalSizeDelta;
         private Vector3 _originalLocalScale;
         private Vector3 _originalLocalPosition;
@@ -44,8 +46,6 @@ namespace DogaShiwakeru
             videoPlayer.playOnAwake = false;
             videoPlayer.isLooping = true;
             videoPlayer.renderMode = VideoRenderMode.RenderTexture;
-            videoPlayer.targetTexture = new RenderTexture(THUMBNAIL_RESOLUTION, THUMBNAIL_RESOLUTION, 0);
-            videoDisplay.texture = videoPlayer.targetTexture;
 
             videoPlayer.prepareCompleted += OnPrepareCompleted;
             videoPlayer.loopPointReached += OnVideoEnd;
@@ -55,8 +55,39 @@ namespace DogaShiwakeru
                 progressSlider.onValueChanged.AddListener(OnSliderValueChanged);
             }
 
-            UpdateProgressUI(false); // Hide UI on awake
+            UpdateProgressUI(false);
             SetSelected(false);
+        }
+
+        public void Init(string path)
+        {
+            _videoPath = path;
+            _isActivated = false;
+            // Clear texture from previous use if this is a pooled object
+            videoDisplay.texture = null;
+            if (videoPlayer.targetTexture != null)
+            {
+                videoPlayer.targetTexture.Release();
+                videoPlayer.targetTexture = null;
+            }
+            // Stop any ongoing video preparation/playback
+            videoPlayer.Stop();
+            videoPlayer.url = null;
+        }
+
+        public void Activate()
+        {
+            if (_isActivated) return; // Don't re-activate if already done
+
+            _isActivated = true;
+            if (videoPlayer.targetTexture == null)
+            {
+                 videoPlayer.targetTexture = new RenderTexture(THUMBNAIL_RESOLUTION, THUMBNAIL_RESOLUTION, 0);
+                 videoDisplay.texture = videoPlayer.targetTexture;
+            }
+            
+            videoPlayer.url = "file://" + _videoPath;
+            videoPlayer.Prepare();
         }
 
         void Update()
@@ -78,10 +109,13 @@ namespace DogaShiwakeru
         
         public void OnSliderValueChanged(float value)
         {
-            if (videoPlayer.isPrepared)
-            {
-                videoPlayer.time = videoPlayer.length * value;
-            }
+            if (videoPlayer.isPrepared) { videoPlayer.time = videoPlayer.length * value; }
+        }
+
+        private System.Collections.IEnumerator ResetFocusAfterDelay()
+        {
+            yield return null; // Wait for one frame
+            EventSystem.current.SetSelectedGameObject(null);
         }
         
         private void UpdateProgressUI(bool isVisible)
@@ -96,42 +130,19 @@ namespace DogaShiwakeru
             }
         }
 
-        public void SetVideo(string path)
-        {
-            _videoPath = path;
-            videoPlayer.url = "file://" + path;
-            Debug.Log($"Preparing video: {Path.GetFileName(path)}");
-            videoPlayer.Prepare();
-        }
-
         private void OnPrepareCompleted(VideoPlayer source)
         {
-            Debug.Log($"Video prepared: {Path.GetFileName(source.url)}. Applying initial mute state ({_isMuted}).");
-            // Ensure mute state and volume is applied before playing
             for (ushort i = 0; i < source.audioTrackCount; i++)
             {
                 source.SetDirectAudioMute(i, _isMuted);
                 source.SetDirectAudioVolume(i, _volume);
             }
             source.Play();
-            Debug.Log($"Now playing: {Path.GetFileName(source.url)}");
         }
 
-        public string GetVideoPath()
-        {
-            return _videoPath;
-        }
-
-        public void Pause()
-        {
-            videoPlayer.Pause();
-        }
-
-        public void Play()
-        {
-            videoPlayer.Play();
-        }
-
+        public string GetVideoPath() => _videoPath;
+        public void Pause() => videoPlayer.Pause();
+        public void Play() => videoPlayer.Play();
         public void Seek(float seconds)
         {
             if (videoPlayer.isPrepared)
@@ -141,55 +152,43 @@ namespace DogaShiwakeru
                 videoPlayer.time = newTime;
             }
         }
-
-        public void ToggleMute()
-        {
-            SetMute(!_isMuted);
-        }
-        
+        public void ToggleMute() => SetMute(!_isMuted);
         public void SetVolume(float volume)
         {
             _volume = Mathf.Clamp01(volume);
             if (!videoPlayer.isPrepared) return;
-
             for (ushort i = 0; i < videoPlayer.audioTrackCount; i++)
             {
                 videoPlayer.SetDirectAudioVolume(i, _volume);
             }
         }
-
         public void SetMute(bool mute)
         {
             _isMuted = mute;
-            if (!videoPlayer.isPrepared) return; // Don't try to mute if not ready, OnPrepareCompleted will handle it
-
+            if (!videoPlayer.isPrepared) return;
             for (ushort i = 0; i < videoPlayer.audioTrackCount; i++)
             {
                 videoPlayer.SetDirectAudioMute(i, _isMuted);
             }
         }
-
         public void SetPlaybackSpeed(float speed)
         {
+            // Ensure the video is activated (prepared) before setting speed
+            if (!_isActivated)
+            {
+                Activate();
+            }
             videoPlayer.playbackSpeed = speed;
         }
-
         public void SetSelected(bool isSelected)
         {
             if (selectionHighlight != null)
             {
-                // Show highlight only if selected AND not in fullscreen.
                 selectionHighlight.SetActive(isSelected && !_isFullScreen);
             }
-            // Show progress UI only if in fullscreen.
             UpdateProgressUI(_isFullScreen);
         }
-
-        public bool IsFullscreen()
-        {
-            return _isFullScreen;
-        }
-
+        public bool IsFullscreen() => _isFullScreen;
         public bool ToggleFullscreen(RectTransform canvasRectTransform)
         {
             _isFullScreen = !_isFullScreen;
@@ -218,7 +217,6 @@ namespace DogaShiwakeru
                 if (videoPlayer.targetTexture != null) videoPlayer.targetTexture.Release();
                 videoPlayer.targetTexture = new RenderTexture(Screen.width, Screen.height, 0);
                 videoDisplay.texture = videoPlayer.targetTexture;
-                Debug.Log("Entered fullscreen mode.");
             }
             else
             {
@@ -233,15 +231,11 @@ namespace DogaShiwakeru
                 if (videoPlayer.targetTexture != null) videoPlayer.targetTexture.Release();
                 videoPlayer.targetTexture = new RenderTexture(THUMBNAIL_RESOLUTION, THUMBNAIL_RESOLUTION, 0);
                 videoDisplay.texture = videoPlayer.targetTexture;
-                Debug.Log("Exited fullscreen mode.");
             }
-            return _isFullScreen;
+            return _isFullScreen; // CRITICAL: Ensure return statement is always present
         }
 
-        private void OnVideoEnd(VideoPlayer vp)
-        {
-            // Optional: Handle video ending if not looping
-        }
+        private void OnVideoEnd(VideoPlayer vp) { }
 
         void OnDestroy()
         {

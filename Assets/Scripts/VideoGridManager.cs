@@ -13,6 +13,9 @@ namespace DogaShiwakeru
         private int _selectedVideoIndex = -1;
         private int _fullscreenVideoIndex = -1;
 
+        // The MainController now controls how many are activated initially
+        // private const int VISIBLE_BUFFER_COUNT = 20; 
+
         public bool IsFullscreen()
         {
             return _fullscreenVideoIndex != -1;
@@ -21,12 +24,21 @@ namespace DogaShiwakeru
         public void DisplayVideos(List<string> videoPaths)
         {
             ClearVideos();
-            if (videoPaths == null) return;
-            foreach (string path in videoPaths)
+            if (videoPaths == null || videoPaths.Count == 0)
+            {
+                Debug.Log("No video files to display in grid.");
+                return;
+            }
+
+            // Instantiate all videos provided by MainController (which is already limited to MAX_VIDEOS_ON_SCREEN)
+            for (int i = 0; i < videoPaths.Count; i++)
             {
                 VideoPlayerUI videoUI = Instantiate(videoPlayerUIPrefab, gridParent);
-                videoUI.SetVideo(path);
-                videoUI.SetPlaybackSpeed(0.1f);
+                videoUI.Init(videoPaths[i]); // Init path for all
+                
+                videoUI.Activate(); // Activate (prepare) all displayed videos
+                videoUI.SetPlaybackSpeed(i < 10 ? 0.01f : 0f); // Low speed for first 10, paused for next batch
+                
                 videoUI.SetMute(true);
                 _currentVideoUIs.Add(videoUI);
             }
@@ -56,6 +68,7 @@ namespace DogaShiwakeru
         {
             if (_selectedVideoIndex == index) return;
 
+            // Deselect old
             if (_selectedVideoIndex != -1)
             {
                 var oldSelectedUI = GetVideoUI(_selectedVideoIndex);
@@ -63,23 +76,26 @@ namespace DogaShiwakeru
                 {
                     oldSelectedUI.SetSelected(false);
                     oldSelectedUI.SetMute(true);
-                    oldSelectedUI.SetPlaybackSpeed(0.1f);
+                    // Apply performance rule for deselected videos
+                    oldSelectedUI.SetPlaybackSpeed(_selectedVideoIndex < 10 ? 0.01f : 0f); 
                 }
             }
 
             _selectedVideoIndex = index;
 
+            // Select new
             var newSelectedUI = GetVideoUI(_selectedVideoIndex);
             if (newSelectedUI != null)
             {
                 newSelectedUI.SetSelected(true);
                 newSelectedUI.SetMute(false);
-                newSelectedUI.SetPlaybackSpeed(1.0f);
+                newSelectedUI.SetPlaybackSpeed(1.0f); // Selected video always plays full speed
             }
         }
 
         public void SelectAndPossiblyFullscreen(int index, bool makeFullscreen)
         {
+            // If currently in fullscreen and moving to a new selection, exit old fullscreen first.
             if (IsFullscreen() && _fullscreenVideoIndex != index)
             {
                 ExitFullscreen();
@@ -128,11 +144,11 @@ namespace DogaShiwakeru
 
             if (IsFullscreen())
             {
-                if (_selectedVideoIndex == _fullscreenVideoIndex)
+                if (_selectedVideoIndex == _fullscreenVideoIndex) // If the selected one IS the fullscreen one, toggle off
                 {
                     ExitFullscreen();
                 }
-                else
+                else // A different video is fullscreen, switch to the selected one
                 {
                     ExitFullscreen();
                     EnterFullscreen(_selectedVideoIndex);
@@ -150,6 +166,8 @@ namespace DogaShiwakeru
             var videoUI = GetVideoUI(index);
             if (videoUI != null && !videoUI.IsFullscreen())
             {
+                videoUI.Activate(); // Ensure video is activated before going fullscreen
+                videoUI.SetPlaybackSpeed(1.0f); // Always full speed in fullscreen
                 videoUI.ToggleFullscreen(canvasRectTransform);
                 _fullscreenVideoIndex = index;
             }
@@ -162,6 +180,15 @@ namespace DogaShiwakeru
             if (videoUI != null && videoUI.IsFullscreen())
             {
                 videoUI.ToggleFullscreen(canvasRectTransform);
+                // After exiting fullscreen, apply the performance rule again
+                if (_fullscreenVideoIndex < 10)
+                {
+                    videoUI.SetPlaybackSpeed(0.01f);
+                }
+                else
+                {
+                    videoUI.SetPlaybackSpeed(0f);
+                }
             }
             _fullscreenVideoIndex = -1;
         }
