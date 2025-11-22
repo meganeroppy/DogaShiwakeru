@@ -114,6 +114,7 @@ namespace DogaShiwakeru
             }
             
             _focusResetQueued = true;
+            Input.ResetInputAxes(); // Reset input state after major UI rebuild
         }
         
         private void UpdateVideoCountDisplay(int count)
@@ -231,7 +232,7 @@ namespace DogaShiwakeru
                     if (selectedVideo != null)
                     {
                         bool isShiftPressed = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-                        float seekSeconds = isShiftPressed ? 300.0f : 10.0f;
+                        float seekSeconds = isShiftPressed ? 300.0f : 15.0f;
                         selectedVideo.Seek(Input.GetKeyDown(KeyCode.LeftArrow) ? -seekSeconds : seekSeconds);
                     }
                 }
