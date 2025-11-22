@@ -16,7 +16,7 @@ namespace DogaShiwakeru
         public Slider progressSlider; // Assign a UI Slider in the Inspector
         public TextMeshProUGUI timeDisplayText; // Assign a TextMeshProUGUI in the Inspector
 
-        private const int THUMBNAIL_RESOLUTION = 128;
+        private const int THUMBNAIL_RESOLUTION = 256;
 
         private string _videoPath;
         private bool _isMuted = true;

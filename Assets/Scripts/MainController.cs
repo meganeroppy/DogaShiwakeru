@@ -19,8 +19,6 @@ namespace DogaShiwakeru
         private float _currentVolume = 1.0f;
 
         private string _fullscreenDisplayFileName = "";
-        private float _fileNameDisplayTimer = 0f;
-        private const float FILENAME_DISPLAY_DURATION = 3.0f;
         private int _lastSelectedIndex = -1;
 
         private string _volumeDisplayText = "";
@@ -35,12 +33,16 @@ namespace DogaShiwakeru
         private int _saveModeSuggestionIndex = -1;
 
         private const string LAST_VIDEO_DIRECTORY_KEY = "LastVideoDirectory";
+        private const string VOLUME_KEY = "LastVolumeLevel";
 
         void Start()
         {
             Debug.Log("MainController started.");
             _videoLoader = new VideoLoader();
             _videoFileManager = new VideoFileManager();
+
+            // Load the last saved volume, defaulting to 100%
+            _currentVolume = PlayerPrefs.GetFloat(VOLUME_KEY, 1.0f);
 
             if (videoGridManager == null || canvasRectTransform == null)
             {
@@ -136,19 +138,21 @@ namespace DogaShiwakeru
             int currentSelectedIndex = videoGridManager.GetSelectedVideoIndex();
             if (currentSelectedIndex != _lastSelectedIndex)
             {
-                if (_isCurrentlyFullscreen && currentSelectedIndex != -1)
+                if (currentSelectedIndex != -1)
                 {
                     var selectedVideo = videoGridManager.GetVideoUI(currentSelectedIndex);
                     if (selectedVideo != null)
                     {
                         _fullscreenDisplayFileName = Path.GetFileName(selectedVideo.GetVideoPath());
-                        _fileNameDisplayTimer = FILENAME_DISPLAY_DURATION;
                     }
+                }
+                else
+                {
+                    _fullscreenDisplayFileName = ""; // Clear filename when nothing is selected
                 }
                 _lastSelectedIndex = currentSelectedIndex;
             }
 
-            if (_fileNameDisplayTimer > 0) _fileNameDisplayTimer -= Time.deltaTime;
             if (_volumeDisplayTimer > 0) _volumeDisplayTimer -= Time.deltaTime;
 
             if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.RightArrow))
@@ -177,6 +181,8 @@ namespace DogaShiwakeru
                 _volumeDisplayText = $"Volume: {_currentVolume:P0}";
                 _volumeDisplayTimer = VOLUME_DISPLAY_DURATION;
                 ApplyGlobalVolume();
+                PlayerPrefs.SetFloat(VOLUME_KEY, _currentVolume);
+                PlayerPrefs.Save();
             }
 
             if (Input.GetKeyDown(KeyCode.Escape))
@@ -236,6 +242,7 @@ namespace DogaShiwakeru
                 if (_videoFileManager.MoveVideoFile(sourcePath, destFolderPath))
                 {
                     LoadVideos(_currentVideoDirectory, currentIndex);
+                    _lastSelectedIndex = -1; // Force a refresh of the selection state
                 }
             }
         }
@@ -263,6 +270,7 @@ namespace DogaShiwakeru
             if (!string.IsNullOrEmpty(targetFolderName))
             {
                  HandleFileOperation(Path.Combine(_currentVideoDirectory, targetFolderName));
+                 _lastSelectedIndex = -1; // Force a refresh of the selection state
             }
             _isSaveModeActive = false;
         }
@@ -324,12 +332,14 @@ namespace DogaShiwakeru
                 GUI.color = Color.white;
                 GUI.Label(new Rect(10, 10, 300, 30), _videoCountText, style);
 
-                if (_isCurrentlyFullscreen && _fileNameDisplayTimer > 0)
+                // Display filename always if something is selected
+                if (!string.IsNullOrEmpty(_fullscreenDisplayFileName))
                 {
-                    style.alignment = TextAnchor.UpperCenter; style.fontSize = 24;
-                    GUI.color = Color.black; GUI.Label(new Rect(0, 21, Screen.width, 40), _fullscreenDisplayFileName, style);
-                    GUI.color = Color.white; GUI.Label(new Rect(0, 20, Screen.width, 40), _fullscreenDisplayFileName, style);
+                    style.alignment = TextAnchor.UpperLeft; style.fontSize = 20;
+                    GUI.color = Color.black; GUI.Label(new Rect(11, 41, Screen.width, 30), _fullscreenDisplayFileName, style);
+                    GUI.color = Color.white; GUI.Label(new Rect(10, 40, Screen.width, 30), _fullscreenDisplayFileName, style);
                 }
+
                 if (_volumeDisplayTimer > 0)
                 {
                     style.alignment = TextAnchor.LowerCenter; style.fontSize = 24;
