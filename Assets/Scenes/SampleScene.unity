@@ -642,6 +642,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   videoPlayerUIPrefab: {fileID: 7558721792960235284, guid: 384cfca3e33563f48b4bd7c71340e94c, type: 3}
   gridParent: {fileID: 178474898}
+  canvasRectTransform: {fileID: 0}
 --- !u!114 &2107673500
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -657,6 +658,7 @@ MonoBehaviour:
   videoGridManager: {fileID: 2107673499}
   videoCountText: {fileID: 1065737571}
   canvasRectTransform: {fileID: 2126685304}
+  initialVideoPath: D:\MyDownloads
 --- !u!4 &2107673501
 Transform:
   m_ObjectHideFlags: 0

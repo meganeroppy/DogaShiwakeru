@@ -14,6 +14,7 @@ namespace DogaShiwakeru
         public VideoGridManager videoGridManager; // Assign in Inspector
         public TextMeshProUGUI videoCountText; // Assign in Inspector (or UnityEngine.UI.Text)
         public RectTransform canvasRectTransform; // Assign the main Canvas RectTransform in Inspector
+        public string initialVideoPath; // Assign a video path in the Inspector to load on start
 
         private string _currentVideoDirectory;
         private bool _isMuted = false; // Global mute state
@@ -21,7 +22,7 @@ namespace DogaShiwakeru
 
         void Start()
         {
-            Debug.Log("MainController started. Opening directory selection dialog.");
+            Debug.Log("MainController started.");
             _videoLoader = new VideoLoader();
             _videoFileManager = new VideoFileManager();
 
@@ -34,6 +35,74 @@ namespace DogaShiwakeru
                 Debug.LogError("VideoGridManager or CanvasRectTransform not assigned in MainController.");
             }
 
+            // Priority 1: Inspector Path
+            if (!string.IsNullOrEmpty(initialVideoPath))
+            {
+                // Check if the path is a directory
+                if (Directory.Exists(initialVideoPath))
+                {
+                    Debug.Log($"Launching with video directory specified in Inspector: {initialVideoPath}");
+                    _currentVideoDirectory = initialVideoPath;
+                    LoadVideos(initialVideoPath);
+                    return; // Success, exit Start()
+                }
+                // Check if the path is a file
+                else if (File.Exists(initialVideoPath))
+                {
+                    Debug.Log($"Launching with single video file specified in Inspector: {initialVideoPath}");
+                    List<string> singleVideoList = new List<string> { initialVideoPath };
+                    videoGridManager.DisplayVideos(singleVideoList);
+                    UpdateVideoCountDisplay(singleVideoList.Count);
+                    if (singleVideoList.Count > 0)
+                    {
+                        videoGridManager.SetSelectedVideo(0, _isMuted, _isCurrentlyFullscreen);
+                    }
+                    return; // Success, exit Start()
+                }
+                else
+                {
+                    Debug.LogError($"The 'Initial Video Path' in Inspector is not a valid file or directory: '{initialVideoPath}'. Opening directory dialog as a fallback.");
+                    OpenDirectoryDialog();
+                    return; // Exit Start()
+                }
+            }
+
+            // Priority 2: Command-Line Arguments (only if Inspector path is empty)
+            string[] args = System.Environment.GetCommandLineArgs();
+            string cmdVideoPath = null;
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (args[i].ToLower() == "-video" && i + 1 < args.Length)
+                {
+                    cmdVideoPath = args[i + 1];
+                    break;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(cmdVideoPath))
+            {
+                 if (File.Exists(cmdVideoPath))
+                {
+                    Debug.Log($"Launching with video specified via command-line: {cmdVideoPath}");
+                    List<string> singleVideoList = new List<string> { cmdVideoPath };
+                    videoGridManager.DisplayVideos(singleVideoList);
+                    UpdateVideoCountDisplay(singleVideoList.Count);
+                    if (singleVideoList.Count > 0)
+                    {
+                        videoGridManager.SetSelectedVideo(0, _isMuted, _isCurrentlyFullscreen);
+                    }
+                    return; // Success, exit Start()
+                }
+                else
+                {
+                    Debug.LogError($"The video path from command-line is invalid or file not found: '{cmdVideoPath}'. Opening directory dialog as a fallback.");
+                    OpenDirectoryDialog();
+                    return; // Exit Start()
+                }
+            }
+
+            // Fallback: No path provided
+            Debug.Log("No initial video path specified. Opening directory selection dialog.");
             OpenDirectoryDialog();
         }
 

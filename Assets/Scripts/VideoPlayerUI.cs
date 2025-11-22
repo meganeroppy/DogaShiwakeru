@@ -2,7 +2,8 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Video;
 using System.IO;
-using System; // Added for Math functions
+using System;
+using TMPro; // Required for TextMeshProUGUI
 
 namespace DogaShiwakeru
 {
@@ -13,6 +14,7 @@ namespace DogaShiwakeru
         public GameObject selectionHighlight;
         public RectTransform videoDisplayRectTransform;
         public Slider progressSlider; // Assign a UI Slider in the Inspector
+        public TextMeshProUGUI timeDisplayText; // Assign a TextMeshProUGUI in the Inspector
 
         private string _videoPath;
         private bool _isMuted = true;
@@ -46,17 +48,47 @@ namespace DogaShiwakeru
 
             if (progressSlider != null)
             {
-                progressSlider.gameObject.SetActive(false);
+                progressSlider.onValueChanged.AddListener(OnSliderValueChanged);
             }
 
+            UpdateProgressUI(false); // Hide UI on awake
             SetSelected(false);
         }
 
         void Update()
         {
-            if (videoPlayer.isPlaying && videoPlayer.length > 0 && progressSlider != null)
+            if (videoPlayer.isPlaying && videoPlayer.length > 0)
             {
-                progressSlider.value = (float)(videoPlayer.time / videoPlayer.length);
+                if (progressSlider != null)
+                {
+                    progressSlider.value = (float)(videoPlayer.time / videoPlayer.length);
+                }
+                if (timeDisplayText != null)
+                {
+                    string currentTime = TimeSpan.FromSeconds(videoPlayer.time).ToString(@"mm\:ss");
+                    string totalTime = TimeSpan.FromSeconds(videoPlayer.length).ToString(@"mm\:ss");
+                    timeDisplayText.text = $"{currentTime} / {totalTime}";
+                }
+            }
+        }
+        
+        public void OnSliderValueChanged(float value)
+        {
+            if (videoPlayer.isPrepared)
+            {
+                videoPlayer.time = videoPlayer.length * value;
+            }
+        }
+        
+        private void UpdateProgressUI(bool isVisible)
+        {
+            if (progressSlider != null)
+            {
+                progressSlider.gameObject.SetActive(isVisible);
+            }
+            if (timeDisplayText != null)
+            {
+                timeDisplayText.gameObject.SetActive(isVisible);
             }
         }
 
@@ -122,15 +154,16 @@ namespace DogaShiwakeru
             {
                 selectionHighlight.SetActive(isSelected);
             }
-            if (progressSlider != null)
-            {
-                progressSlider.gameObject.SetActive(isSelected);
-            }
+            // Show progress UI if selected OR if already in fullscreen
+            UpdateProgressUI(isSelected || _isFullScreen);
         }
 
         public bool ToggleFullscreen(RectTransform canvasRectTransform)
         {
             _isFullScreen = !_isFullScreen;
+            
+            // Show/Hide progress UI based on new fullscreen state
+            UpdateProgressUI(_isFullScreen);
 
             if (_isFullScreen)
             {
@@ -166,6 +199,11 @@ namespace DogaShiwakeru
                 if (videoPlayer.targetTexture != null) videoPlayer.targetTexture.Release();
                 videoPlayer.targetTexture = new RenderTexture(256, 256, 0);
                 videoDisplay.texture = videoPlayer.targetTexture;
+                
+                // After exiting, visibility should be based on selection status again.
+                // We find out the selection status from the active state of the highlight.
+                bool isSelected = selectionHighlight != null && selectionHighlight.activeSelf;
+                UpdateProgressUI(isSelected);
 
                 Debug.Log("Exited fullscreen mode.");
             }
