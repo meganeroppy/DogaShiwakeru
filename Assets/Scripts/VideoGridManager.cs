@@ -11,7 +11,7 @@ namespace DogaShiwakeru
 
         private List<VideoPlayerUI> _currentVideoUIs = new List<VideoPlayerUI>();
         private int _selectedVideoIndex = -1;
-        private int _fullscreenVideoIndex = -1; // The single source of truth for fullscreen state
+        private int _fullscreenVideoIndex = -1;
 
         public bool IsFullscreen()
         {
@@ -56,7 +56,6 @@ namespace DogaShiwakeru
         {
             if (_selectedVideoIndex == index) return;
 
-            // Deselect old
             if (_selectedVideoIndex != -1)
             {
                 var oldSelectedUI = GetVideoUI(_selectedVideoIndex);
@@ -70,7 +69,6 @@ namespace DogaShiwakeru
 
             _selectedVideoIndex = index;
 
-            // Select new
             var newSelectedUI = GetVideoUI(_selectedVideoIndex);
             if (newSelectedUI != null)
             {
@@ -82,7 +80,6 @@ namespace DogaShiwakeru
 
         public void SelectAndPossiblyFullscreen(int index, bool makeFullscreen)
         {
-            // If currently in fullscreen and moving to a new selection, exit old fullscreen first.
             if (IsFullscreen() && _fullscreenVideoIndex != index)
             {
                 ExitFullscreen();
@@ -131,24 +128,23 @@ namespace DogaShiwakeru
 
             if (IsFullscreen())
             {
-                // If currently in fullscreen
-                if (_selectedVideoIndex == _fullscreenVideoIndex) // If the selected one IS the fullscreen one, toggle off
+                if (_selectedVideoIndex == _fullscreenVideoIndex)
                 {
                     ExitFullscreen();
                 }
-                else // A different video is fullscreen, switch to the selected one
+                else
                 {
                     ExitFullscreen();
                     EnterFullscreen(_selectedVideoIndex);
                 }
             }
-            else // Not in fullscreen, so enter fullscreen with the selected video
+            else
             {
                 EnterFullscreen(_selectedVideoIndex);
             }
         }
         
-        private void EnterFullscreen(int index)
+        public void EnterFullscreen(int index)
         {
             if (index == -1) return;
             var videoUI = GetVideoUI(index);

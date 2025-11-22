@@ -4,11 +4,13 @@ using SFB;
 using System.IO;
 using System.Linq;
 using UnityEngine.Networking;
+using UnityEngine.EventSystems;
 
 namespace DogaShiwakeru
 {
     public class MainController : MonoBehaviour
     {
+        // --- Fields ---
         private VideoLoader _videoLoader;
         private VideoFileManager _videoFileManager;
         public VideoGridManager videoGridManager;
@@ -17,14 +19,11 @@ namespace DogaShiwakeru
 
         private string _currentVideoDirectory;
         private float _currentVolume = 1.0f;
-
         private string _fullscreenDisplayFileName = "";
         private int _lastSelectedIndex = -1;
-
         private string _volumeDisplayText = "";
         private float _volumeDisplayTimer = 0f;
         private const float VOLUME_DISPLAY_DURATION = 2.0f;
-        
         private string _videoCountText = "";
 
         private bool _isSaveModeActive = false;
@@ -35,9 +34,12 @@ namespace DogaShiwakeru
         
         private bool _performSaveQueued = false;
         private bool _performRenameQueued = false;
+        private bool _focusResetQueued = false;
 
         private const string LAST_VIDEO_DIRECTORY_KEY = "LastVideoDirectory";
         private const string VOLUME_KEY = "LastVolumeLevel";
+        
+        // --- Methods ---
 
         void Start()
         {
@@ -94,6 +96,7 @@ namespace DogaShiwakeru
 
                     int finalIndex = Mathf.Clamp(indexToSelectAfterLoad, 0, videoFiles.Count - 1);
                     videoGridManager.SelectAndPossiblyFullscreen(finalIndex, forceFullscreen); 
+                    _focusResetQueued = true;
                 }
                 else
                 {
@@ -113,6 +116,19 @@ namespace DogaShiwakeru
         {
             if (videoGridManager == null) return;
 
+            if (_focusResetQueued)
+            {
+                Debug.Log("[DIAG] Executing queued focus reset.");
+                EventSystem.current.SetSelectedGameObject(null);
+                _focusResetQueued = false;
+            }
+
+            if (Input.anyKeyDown && !(_isSaveModeActive || _isRenameModeActive))
+            {
+                string focusedObjectName = EventSystem.current.currentSelectedGameObject ? EventSystem.current.currentSelectedGameObject.name : "null";
+                Debug.Log($"[DIAG-UPDATE] KeyDown detected. Focused: {focusedObjectName}.");
+            }
+            
             if (_performSaveQueued) { _performSaveQueued = false; PerformSaveAction(); }
             if (_performRenameQueued) { _performRenameQueued = false; PerformRenameAction(); }
 
@@ -134,29 +150,23 @@ namespace DogaShiwakeru
 
             if (_volumeDisplayTimer > 0) _volumeDisplayTimer -= Time.deltaTime;
 
-            // --- Input Handling with Priority ---
-            bool isFullscreen = videoGridManager.IsFullscreen();
+            bool isFullscreen = videoGridManager.IsFullscreen(); 
 
-            if (Input.GetKeyDown(KeyCode.D))
+            if (Input.GetKeyDown(KeyCode.S))
             {
-                HandleFileOperation(Path.Combine(_currentVideoDirectory, "del"), isFullscreen);
-            }
-            else if (Input.GetKeyDown(KeyCode.N))
-            {
-                HandleFileOperation(Path.Combine(_currentVideoDirectory, "nice"), isFullscreen);
-            }
-            else if (Input.GetKeyDown(KeyCode.S))
-            {
+                Debug.Log("[DIAG] S key processed in HandleNormalInput.");
                 if (videoGridManager.GetSelectedVideoUI() != null)
                 {
                     _isSaveModeActive = true;
                     _saveModeInputString = "";
                     _saveModeSuggestionIndex = -1;
                     UpdateSaveSuggestions();
+                    _focusResetQueued = true;
                 }
             }
             else if (Input.GetKeyDown(KeyCode.R))
             {
+                Debug.Log("[DIAG] R key processed in HandleNormalInput.");
                 VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
                 if (selectedVideo != null)
                 {
@@ -164,7 +174,39 @@ namespace DogaShiwakeru
                     _saveModeInputString = Path.GetFileName(selectedVideo.GetVideoPath());
                     _saveModeSuggestions.Clear();
                     _saveModeSuggestionIndex = -1;
+                    _focusResetQueued = true;
                 }
+            }
+            else if (Input.GetKeyDown(KeyCode.D))
+            {
+                HandleFileOperation(Path.Combine(_currentVideoDirectory, "del"), isFullscreen);
+            }
+            else if (Input.GetKeyDown(KeyCode.N))
+            {
+                HandleFileOperation(Path.Combine(_currentVideoDirectory, "nice"), isFullscreen);
+            }
+            else if (Input.GetKeyDown(KeyCode.F))
+            {
+                videoGridManager.ToggleFullscreenOnSelected();
+            }
+            else if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                if (videoGridManager.GetSelectedVideoIndex() == -1) { OpenDirectoryDialog(); } 
+                else { videoGridManager.DeselectOrExitFullscreen(); }
+            }
+            else if (Input.GetKeyDown(KeyCode.Space))
+            {
+                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+                if (selectedVideo != null)
+                {
+                    if (selectedVideo.videoPlayer.isPlaying) { selectedVideo.Pause(); }
+                    else { selectedVideo.Play(); }
+                }
+            }
+            else if (Input.GetKeyDown(KeyCode.Backspace))
+            {
+                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+                if (selectedVideo != null) selectedVideo.videoPlayer.time = 0;
             }
             else if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.RightArrow))
             {
@@ -194,16 +236,6 @@ namespace DogaShiwakeru
                 PlayerPrefs.SetFloat(VOLUME_KEY, _currentVolume);
                 PlayerPrefs.Save();
             }
-            else if (Input.GetKeyDown(KeyCode.Escape))
-            {
-                if (videoGridManager.GetSelectedVideoIndex() == -1) { OpenDirectoryDialog(); } 
-                else { videoGridManager.DeselectOrExitFullscreen(); }
-            }
-            else if (Input.GetKeyDown(KeyCode.Backspace))
-            {
-                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
-                if (selectedVideo != null) selectedVideo.videoPlayer.time = 0;
-            }
             else if (Input.GetKeyDown(KeyCode.O))
             {
                 VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
@@ -213,19 +245,6 @@ namespace DogaShiwakeru
             {
                 VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
                 if (selectedVideo != null) selectedVideo.ToggleMute();
-            }
-            else if (Input.GetKeyDown(KeyCode.F))
-            {
-                videoGridManager.ToggleFullscreenOnSelected();
-            }
-            else if (Input.GetKeyDown(KeyCode.Space))
-            {
-                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
-                if (selectedVideo != null)
-                {
-                    if (selectedVideo.videoPlayer.isPlaying) { selectedVideo.Pause(); } 
-                    else { selectedVideo.Play(); }
-                }
             }
             else if (Input.GetKeyDown(KeyCode.G))
             {
@@ -280,6 +299,7 @@ namespace DogaShiwakeru
                  _lastSelectedIndex = -1;
             }
             _isSaveModeActive = false;
+            _focusResetQueued = true;
         }
         
         private void PerformRenameAction()
@@ -299,6 +319,7 @@ namespace DogaShiwakeru
                 }
             }
             _isRenameModeActive = false;
+            _focusResetQueued = true;
         }
         
         private void ApplyGlobalVolume()
@@ -314,10 +335,18 @@ namespace DogaShiwakeru
         {
             if (_isSaveModeActive || _isRenameModeActive)
             {
+                // This block handles key events specifically when the modal UI is active
                 Event e = Event.current;
                 if (e.type == EventType.KeyDown)
                 {
-                    if (e.keyCode == KeyCode.Escape) { _isSaveModeActive = false; _isRenameModeActive = false; e.Use(); }
+                    if (e.keyCode == KeyCode.Escape) 
+                    { 
+                        Debug.Log($"[DIAG-ONGUI] Escape key pressed. Queueing focus reset.");
+                        _isSaveModeActive = false; 
+                        _isRenameModeActive = false; 
+                        _focusResetQueued = true; 
+                        e.Use(); 
+                    }
                     else if (e.keyCode == KeyCode.Tab && _isSaveModeActive) 
                     {
                         if (_saveModeSuggestions.Count > 0)
@@ -327,9 +356,14 @@ namespace DogaShiwakeru
                         }
                         e.Use();
                     }
-                    else if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) { if (_isRenameModeActive) _performRenameQueued = true; else _performSaveQueued = true; e.Use(); }
+                    else if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) 
+                    { 
+                        if (_isRenameModeActive) _performRenameQueued = true; else _performSaveQueued = true; 
+                        e.Use(); 
+                    }
                 }
 
+                // --- UI Drawing ---
                 GUI.color = new Color(0, 0, 0, 0.7f);
                 GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
                 GUI.color = Color.white;
@@ -339,6 +373,7 @@ namespace DogaShiwakeru
                 GUI.Box(boxRect, boxTitle);
                 
                 GUI.SetNextControlName("SaveInput");
+                // IMPORTANT: Text input itself is handled by the TextField
                 string newText = GUI.TextField(new Rect(boxRect.x + 10, boxRect.y + 30, boxRect.width - 20, 30), _saveModeInputString, new GUIStyle(GUI.skin.textField) { fontSize = 18 });
                 if (newText != _saveModeInputString) 
                 { 

@@ -4,6 +4,7 @@ using UnityEngine.Video;
 using System.IO;
 using System;
 using TMPro; // Required for TextMeshProUGUI
+using UnityEngine.EventSystems;
 
 namespace DogaShiwakeru
 {
