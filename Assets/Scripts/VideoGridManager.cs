@@ -59,7 +59,7 @@ namespace DogaShiwakeru
 
         public RectTransform canvasRectTransform; // Assign from MainController
 
-        public void SetSelectedVideo(int index, bool forceFullscreen = false)
+        public void SetSelectedVideo(int index, bool maintainFullscreen = false)
         {
             if (_selectedVideoIndex == index) return;
 
@@ -68,8 +68,8 @@ namespace DogaShiwakeru
             {
                 var oldSelectedUI = _currentVideoUIs[_selectedVideoIndex];
                 
-                // If we are in fullscreen, the old video must exit.
-                if (forceFullscreen)
+                // If we are maintaining fullscreen, the old video must exit it.
+                if (maintainFullscreen)
                 {
                     oldSelectedUI.ToggleFullscreen(canvasRectTransform);
                 }
@@ -90,8 +90,8 @@ namespace DogaShiwakeru
                 newSelectedUI.SetMute(false);
                 newSelectedUI.SetPlaybackSpeed(1.0f);
 
-                // If we are supposed to be in fullscreen, enter it.
-                if (forceFullscreen)
+                // If we are maintaining fullscreen, the new video must enter it.
+                if (maintainFullscreen)
                 {
                     newSelectedUI.ToggleFullscreen(canvasRectTransform);
                 }

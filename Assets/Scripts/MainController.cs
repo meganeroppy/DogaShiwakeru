@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using SFB;
 using System.IO;
 using System.Linq;
+using UnityEngine.Networking;
 
 namespace DogaShiwakeru
 {
@@ -205,6 +206,20 @@ namespace DogaShiwakeru
             {
                 VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
                 if (selectedVideo != null) _isCurrentlyFullscreen = selectedVideo.ToggleFullscreen(canvasRectTransform);
+            }
+
+            if (Input.GetKeyDown(KeyCode.G))
+            {
+                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+                if (selectedVideo != null)
+                {
+                    string fileName = Path.GetFileNameWithoutExtension(selectedVideo.GetVideoPath());
+                    string encodedFileName = UnityEngine.Networking.UnityWebRequest.EscapeURL(fileName);
+                    string googleSearchUrl = $"https://www.google.com/search?q={encodedFileName}";
+                    
+                    Debug.Log($"Opening browser to search for: {fileName}");
+                    Application.OpenURL(googleSearchUrl);
+                }
             }
         }
         
