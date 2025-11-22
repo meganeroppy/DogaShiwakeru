@@ -25,11 +25,10 @@ namespace DogaShiwakeru
             {
                 VideoPlayerUI videoUI = Instantiate(videoPlayerUIPrefab, gridParent);
                 videoUI.SetVideo(path);
-                videoUI.SetPlaybackSpeed(0.1f); // Low FPS
-                videoUI.SetMute(true); // Mute all videos on load
+                videoUI.SetPlaybackSpeed(0.1f);
+                videoUI.SetMute(true);
                 _currentVideoUIs.Add(videoUI);
             }
-            Debug.Log($"Displayed {videoPaths.Count} videos in the grid.");
         }
 
         private void ClearVideos()
@@ -40,7 +39,6 @@ namespace DogaShiwakeru
             }
             _currentVideoUIs.Clear();
             _selectedVideoIndex = -1;
-            Debug.Log("Cleared existing video UIs.");
         }
 
         public VideoPlayerUI GetVideoUI(int index)
@@ -57,45 +55,41 @@ namespace DogaShiwakeru
             return _currentVideoUIs.Count;
         }
 
-        public RectTransform canvasRectTransform; // Assign from MainController
+        public RectTransform canvasRectTransform;
 
         public void SetSelectedVideo(int index, bool maintainFullscreen = false)
         {
             if (_selectedVideoIndex == index) return;
 
-            // --- Deselect the Old Video ---
-            if (_selectedVideoIndex != -1 && _selectedVideoIndex < _currentVideoUIs.Count)
-            {
-                var oldSelectedUI = _currentVideoUIs[_selectedVideoIndex];
-                
-                // If we are maintaining fullscreen, the old video must exit it.
-                if (maintainFullscreen)
-                {
-                    oldSelectedUI.ToggleFullscreen(canvasRectTransform);
-                }
-                
-                oldSelectedUI.SetSelected(false);
-                oldSelectedUI.SetMute(true);
-                oldSelectedUI.SetPlaybackSpeed(0.1f);
-            }
-
+            int oldIndex = _selectedVideoIndex;
             _selectedVideoIndex = index;
 
-            // --- Select the New Video ---
+            // --- Activate the New Video FIRST ---
             if (_selectedVideoIndex != -1 && _selectedVideoIndex < _currentVideoUIs.Count)
             {
                 var newSelectedUI = _currentVideoUIs[_selectedVideoIndex];
-
                 newSelectedUI.SetSelected(true);
                 newSelectedUI.SetMute(false);
                 newSelectedUI.SetPlaybackSpeed(1.0f);
 
-                // If we are maintaining fullscreen, the new video must enter it.
                 if (maintainFullscreen)
                 {
                     newSelectedUI.ToggleFullscreen(canvasRectTransform);
                 }
                 Debug.Log($"Selected video at index: {index}");
+            }
+
+            // --- Deactivate the Old Video SECOND ---
+            if (oldIndex != -1 && oldIndex < _currentVideoUIs.Count)
+            {
+                var oldSelectedUI = _currentVideoUIs[oldIndex];
+                if (maintainFullscreen)
+                {
+                    oldSelectedUI.ToggleFullscreen(canvasRectTransform);
+                }
+                oldSelectedUI.SetSelected(false);
+                oldSelectedUI.SetMute(true);
+                oldSelectedUI.SetPlaybackSpeed(0.1f);
             }
         }
 
@@ -113,20 +107,18 @@ namespace DogaShiwakeru
             return _selectedVideoIndex;
         }
 
-        public void MoveSelection(int direction, bool isFullscreenMode) // -1 for left, 1 for right
+        public void MoveSelection(int direction, bool isFullscreenMode)
         {
             if (_currentVideoUIs.Count == 0) return;
 
             int newIndex = _selectedVideoIndex + direction;
-
-            if (_selectedVideoIndex == -1) // If nothing is selected, start from the beginning or end.
+            if (_selectedVideoIndex == -1)
             {
                 newIndex = (direction > 0) ? 0 : _currentVideoUIs.Count - 1;
             }
             else
             {
-                if (newIndex < 0) newIndex = _currentVideoUIs.Count - 1;
-                else if (newIndex >= _currentVideoUIs.Count) newIndex = 0;
+                newIndex = (newIndex + _currentVideoUIs.Count) % _currentVideoUIs.Count;
             }
 
             SetSelectedVideo(newIndex, isFullscreenMode);
@@ -134,12 +126,11 @@ namespace DogaShiwakeru
 
         public void DeselectAll(bool isFullscreenMode)
         {
-            // In fullscreen, deselecting all should exit the fullscreen view
             if (isFullscreenMode && _selectedVideoIndex != -1)
             {
                 _currentVideoUIs[_selectedVideoIndex].ToggleFullscreen(canvasRectTransform);
             }
-            SetSelectedVideo(-1, false); // Always exit fullscreen mode logic when deselecting
+            SetSelectedVideo(-1, false);
         }
     }
 }

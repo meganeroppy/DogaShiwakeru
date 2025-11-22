@@ -29,6 +29,7 @@ namespace DogaShiwakeru
         private string _videoCountText = "";
 
         private bool _isSaveModeActive = false;
+        private bool _isRenameModeActive = false;
         private string _saveModeInputString = "";
         private List<string> _saveModeSuggestions = new List<string>();
         private int _saveModeSuggestionIndex = -1;
@@ -111,7 +112,7 @@ namespace DogaShiwakeru
         void Update()
         {
             if (videoGridManager == null) return;
-            if (!_isSaveModeActive)
+            if (!_isSaveModeActive && !_isRenameModeActive)
             {
                 HandleNormalInput();
             }
@@ -190,6 +191,18 @@ namespace DogaShiwakeru
                 }
             }
             
+            if (Input.GetKeyDown(KeyCode.R))
+            {
+                VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+                if (selectedVideo != null)
+                {
+                    _isRenameModeActive = true;
+                    _saveModeInputString = Path.GetFileName(selectedVideo.GetVideoPath());
+                    _saveModeSuggestions.Clear(); // No suggestions for rename
+                    _saveModeSuggestionIndex = -1;
+                }
+            }
+
             if (Input.GetKeyDown(KeyCode.O))
             {
                 VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
@@ -266,6 +279,30 @@ namespace DogaShiwakeru
             _isSaveModeActive = false;
         }
         
+        private void PerformRenameAction()
+        {
+            string newFileName = _saveModeInputString.Trim();
+            VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
+
+            if (selectedVideo != null && !string.IsNullOrEmpty(newFileName))
+            {
+                int currentIndex = videoGridManager.GetSelectedVideoIndex();
+                string sourcePath = selectedVideo.GetVideoPath();
+                
+                if (Path.GetFileName(sourcePath).Equals(newFileName, System.StringComparison.Ordinal))
+                {
+                     Debug.Log("File name is unchanged. Aborting rename.");
+                }
+                else if (_videoFileManager.RenameVideoFile(sourcePath, newFileName))
+                {
+                    // Reload the list to reflect the new name, maintaining fullscreen if active
+                    LoadVideos(_currentVideoDirectory, currentIndex, _isCurrentlyFullscreen);
+                    _lastSelectedIndex = -1;
+                }
+            }
+            _isRenameModeActive = false; // Always exit rename mode
+        }
+        
         private void ApplyGlobalVolume()
         {
             for (int i = 0; i < videoGridManager.GetVideoCount(); i++)
@@ -277,13 +314,18 @@ namespace DogaShiwakeru
 
         void OnGUI()
         {
-            if (_isSaveModeActive)
+            if (_isSaveModeActive || _isRenameModeActive)
             {
                 Event e = Event.current;
                 if (e.type == EventType.KeyDown)
                 {
-                    if (e.keyCode == KeyCode.Escape) { _isSaveModeActive = false; e.Use(); }
-                    else if (e.keyCode == KeyCode.Tab)
+                    if (e.keyCode == KeyCode.Escape) 
+                    { 
+                        _isSaveModeActive = false; 
+                        _isRenameModeActive = false; 
+                        e.Use(); 
+                    }
+                    else if (e.keyCode == KeyCode.Tab && _isSaveModeActive) // Tab only works in Save mode
                     {
                         if (_saveModeSuggestions.Count > 0)
                         {
@@ -292,20 +334,32 @@ namespace DogaShiwakeru
                         }
                         e.Use();
                     }
-                    else if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) { PerformSaveAction(); e.Use(); }
+                    else if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) 
+                    { 
+                        if (_isRenameModeActive) PerformRenameAction();
+                        else PerformSaveAction();
+                        e.Use(); 
+                    }
                 }
 
                 GUI.color = new Color(0, 0, 0, 0.7f);
                 GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
                 GUI.color = Color.white;
                 Rect boxRect = new Rect((Screen.width - 400) / 2, (Screen.height - 300) / 2, 400, 300);
-                GUI.Box(boxRect, "Save to Subfolder");
+                
+                string boxTitle = _isRenameModeActive ? "Rename File" : "Save to Subfolder";
+                GUI.Box(boxRect, boxTitle);
+                
                 GUI.SetNextControlName("SaveInput");
                 string newText = GUI.TextField(new Rect(boxRect.x + 10, boxRect.y + 30, boxRect.width - 20, 30), _saveModeInputString, new GUIStyle(GUI.skin.textField) { fontSize = 18 });
-                if (newText != _saveModeInputString) { _saveModeInputString = newText; UpdateSaveSuggestions(); }
+                if (newText != _saveModeInputString) 
+                { 
+                    _saveModeInputString = newText;
+                    if (_isSaveModeActive) UpdateSaveSuggestions(); 
+                }
                 GUI.FocusControl("SaveInput");
 
-                if (_saveModeSuggestions.Count > 0)
+                if (_isSaveModeActive && _saveModeSuggestions.Count > 0)
                 {
                     GUIStyle sStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.MiddleLeft };
                     GUIStyle hStyle = new GUIStyle(sStyle) { normal = { textColor = Color.yellow } };

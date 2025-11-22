@@ -60,5 +60,41 @@ namespace DogaShiwakeru
                 return false;
             }
         }
+        public bool RenameVideoFile(string sourceFilePath, string newFileName)
+        {
+            if (!File.Exists(sourceFilePath))
+            {
+                Debug.LogError($"Source file not found: {sourceFilePath}");
+                return false;
+            }
+            
+            // Basic validation for the new file name to prevent directory traversal issues.
+            if (string.IsNullOrEmpty(newFileName) || newFileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            {
+                Debug.LogError($"Invalid new file name: {newFileName}");
+                return false;
+            }
+
+            string sourceDirectory = Path.GetDirectoryName(sourceFilePath);
+            string destinationFilePath = Path.Combine(sourceDirectory, newFileName);
+
+            if (File.Exists(destinationFilePath))
+            {
+                 Debug.LogError($"A file with the name {newFileName} already exists in the directory.");
+                return false;
+            }
+
+            try
+            {
+                File.Move(sourceFilePath, destinationFilePath);
+                Debug.Log($"Renamed file from {sourceFilePath} to {destinationFilePath}");
+                return true;
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"Error renaming file {sourceFilePath}: {ex.Message}");
+                return false;
+            }
+        }
     }
 }
