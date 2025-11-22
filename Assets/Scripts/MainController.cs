@@ -2,41 +2,39 @@ using UnityEngine;
 using System.Collections.Generic;
 using SFB;
 using System.IO;
+using System.Linq;
 
 namespace DogaShiwakeru
 {
     public class MainController : MonoBehaviour
     {
-        // Reference to the VideoLoader
         private VideoLoader _videoLoader;
         private VideoFileManager _videoFileManager;
-        public VideoGridManager videoGridManager; // Assign in Inspector
-        public RectTransform canvasRectTransform; // Assign the main Canvas RectTransform in Inspector
-        public string initialVideoPath; // Assign a video path in the Inspector to load on start
+        public VideoGridManager videoGridManager;
+        public RectTransform canvasRectTransform;
+        public string initialVideoPath;
 
         private string _currentVideoDirectory;
         private bool _isCurrentlyFullscreen = false;
         private float _currentVolume = 1.0f;
 
-        // For OnGUI filename display
         private string _fullscreenDisplayFileName = "";
         private float _fileNameDisplayTimer = 0f;
-        private const float FILENAME_DISPLAY_DURATION = 3.0f; // 3 seconds
+        private const float FILENAME_DISPLAY_DURATION = 3.0f;
         private int _lastSelectedIndex = -1;
 
-        // For OnGUI volume display
         private string _volumeDisplayText = "";
         private float _volumeDisplayTimer = 0f;
-        private const float VOLUME_DISPLAY_DURATION = 2.0f; // 2 seconds
+        private const float VOLUME_DISPLAY_DURATION = 2.0f;
         
-        // For OnGUI video count display
         private string _videoCountText = "";
 
-        // For Save Mode
         private bool _isSaveModeActive = false;
         private string _saveModeInputString = "";
         private List<string> _saveModeSuggestions = new List<string>();
         private int _saveModeSuggestionIndex = -1;
+
+        private const string LAST_VIDEO_DIRECTORY_KEY = "LastVideoDirectory";
 
         void Start()
         {
@@ -44,128 +42,61 @@ namespace DogaShiwakeru
             _videoLoader = new VideoLoader();
             _videoFileManager = new VideoFileManager();
 
-            if (videoGridManager != null && canvasRectTransform != null)
-            {
-                videoGridManager.canvasRectTransform = canvasRectTransform;
-            }
-            else
+            if (videoGridManager == null || canvasRectTransform == null)
             {
                 Debug.LogError("VideoGridManager or CanvasRectTransform not assigned in MainController.");
             }
 
-            // --- Determine which path to load on startup ---
-
-            // Priority 1: Inspector Path
-            if (!string.IsNullOrEmpty(initialVideoPath))
-            {
-                if (Directory.Exists(initialVideoPath))
-                {
-                    Debug.Log($"Launching with video directory specified in Inspector: {initialVideoPath}");
-                    LoadVideos(initialVideoPath);
-                    return;
-                }
-                else if (File.Exists(initialVideoPath))
-                {
-                    Debug.Log($"Launching with single video file specified in Inspector: {initialVideoPath}");
-                    videoGridManager.DisplayVideos(new List<string> { initialVideoPath });
-                    UpdateVideoCountDisplay(1);
-                    videoGridManager.SetSelectedVideo(0, _isCurrentlyFullscreen);
-                    return;
-                }
-                else
-                {
-                    Debug.LogWarning($"The 'Initial Video Path' in Inspector is not a valid file or directory: '{initialVideoPath}'. Proceeding to next check.");
-                }
-            }
-
-            // Priority 2: Command-Line Arguments
-            string[] args = System.Environment.GetCommandLineArgs();
-            string cmdVideoPath = null;
-            for (int i = 0; i < args.Length; i++)
-            {
-                if (args[i].ToLower() == "-video" && i + 1 < args.Length)
-                {
-                    cmdVideoPath = args[i + 1];
-                    break;
-                }
-            }
-            if (!string.IsNullOrEmpty(cmdVideoPath))
-            {
-                 if (File.Exists(cmdVideoPath))
-                {
-                    Debug.Log($"Launching with video specified via command-line: {cmdVideoPath}");
-                    videoGridManager.DisplayVideos(new List<string> { cmdVideoPath });
-                    UpdateVideoCountDisplay(1);
-                    videoGridManager.SetSelectedVideo(0, _isCurrentlyFullscreen);
-                    return;
-                }
-                else
-                {
-                    Debug.LogWarning($"The video path from command-line is invalid or file not found: '{cmdVideoPath}'. Proceeding to next check.");
-                }
-            }
-
-            // Priority 3: Last Opened Directory from PlayerPrefs
+            // --- Simplified Startup Logic ---
             string lastDirectory = PlayerPrefs.GetString(LAST_VIDEO_DIRECTORY_KEY, "");
+
             if (!string.IsNullOrEmpty(lastDirectory) && Directory.Exists(lastDirectory))
             {
-                Debug.Log($"Found last opened directory in PlayerPrefs: '{lastDirectory}'. Loading automatically.");
-                LoadVideos(lastDirectory);
-                return;
+                // Check if the directory contains any video files before loading
+                var videoFiles = _videoLoader.LoadVideosFromDirectory(lastDirectory);
+                if (videoFiles.Any())
+                {
+                    Debug.Log($"Loading last opened directory: '{lastDirectory}'.");
+                    LoadVideos(lastDirectory);
+                    return;
+                }
+                else
+                {
+                     Debug.LogWarning($"Last opened directory '{lastDirectory}' contains no video files.");
+                }
             }
-
-            // Fallback: No valid path found, open the dialog
-            Debug.Log("No valid initial path found. Opening directory selection dialog.");
+            
+            // Fallback for all other cases
+            Debug.Log("No valid last opened directory found. Opening directory selection dialog.");
             OpenDirectoryDialog();
         }
 
-        private const string LAST_VIDEO_DIRECTORY_KEY = "LastVideoDirectory";
-
         private void OpenDirectoryDialog()
         {
-            Debug.Log("Attempting to open folder panel...");
-            string initialPath = PlayerPrefs.GetString(LAST_VIDEO_DIRECTORY_KEY, "");
-            Debug.Log($"Loaded last directory from PlayerPrefs: '{initialPath}'");
-
-            if (string.IsNullOrEmpty(initialPath) || !Directory.Exists(initialPath))
-            {
-                Debug.LogWarning($"Saved path ('{initialPath}') is invalid or does not exist. Defaulting to MyDocuments.");
-                initialPath = System.Environment.GetFolderPath(System.Environment.SpecialFolder.MyDocuments);
-            }
-
-            string[] paths = null;
-            try
-            {
-                Debug.Log($"Using initial path for dialog: '{initialPath}'");
-                paths = SFB.StandaloneFileBrowser.OpenFolderPanel("Select Video Directory", initialPath, false);
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogError($"An error occurred opening the file browser: {e.Message}");
-                paths = SFB.StandaloneFileBrowser.OpenFolderPanel("Select Video Directory", "", false);
-            }
-
-            Debug.Log($"Folder panel returned. Number of paths: {(paths != null ? paths.Length : 0)}");
+            string initialPath = PlayerPrefs.GetString(LAST_VIDEO_DIRECTORY_KEY, System.Environment.GetFolderPath(System.Environment.SpecialFolder.MyDocuments));
+            string[] paths = SFB.StandaloneFileBrowser.OpenFolderPanel("Select Video Directory", initialPath, false);
 
             if (paths != null && paths.Length > 0 && !string.IsNullOrEmpty(paths[0]))
             {
-                string rawPath = paths[0].TrimEnd('\0');
-                LoadVideos(Path.GetFullPath(rawPath));
+                LoadVideos(Path.GetFullPath(paths[0].TrimEnd('\0')));
             }
             else
             {
-                Debug.LogWarning("Directory selection cancelled or no directory selected.");
+                Debug.LogWarning("Directory selection cancelled.");
+                // If user cancels, we should show an empty grid, not re-trigger the dialog
+                videoGridManager.DisplayVideos(new List<string>());
+                UpdateVideoCountDisplay(0);
             }
         }
 
         private void LoadVideos(string directoryPath, int indexToSelectAfterLoad = 0)
         {
             var videoFiles = _videoLoader.LoadVideosFromDirectory(directoryPath);
+            UpdateVideoCountDisplay(videoFiles.Count);
 
             if (videoGridManager != null)
             {
                 videoGridManager.DisplayVideos(videoFiles);
-                UpdateVideoCountDisplay(videoFiles.Count);
                 ApplyGlobalVolume();
 
                 if (videoFiles.Count > 0)
@@ -173,25 +104,16 @@ namespace DogaShiwakeru
                     _currentVideoDirectory = directoryPath;
                     PlayerPrefs.SetString(LAST_VIDEO_DIRECTORY_KEY, _currentVideoDirectory);
                     PlayerPrefs.Save();
-                    Debug.Log($"Saved '{_currentVideoDirectory}' as last opened directory.");
 
-                    int newCount = videoFiles.Count;
-                    int finalIndex = indexToSelectAfterLoad;
-                    if (finalIndex >= newCount)
-                    {
-                        finalIndex = newCount - 1;
-                    }
+                    int finalIndex = Mathf.Clamp(indexToSelectAfterLoad, 0, videoFiles.Count - 1);
                     videoGridManager.SetSelectedVideo(finalIndex, _isCurrentlyFullscreen);
                 }
                 else
                 {
-                    Debug.LogWarning($"No video files found in '{directoryPath}'. Opening directory selection dialog.");
-                    OpenDirectoryDialog();
+                    // If loading results in an empty list (e.g., after last file is moved),
+                    // clear the saved key so the dialog opens next time.
+                    PlayerPrefs.DeleteKey(LAST_VIDEO_DIRECTORY_KEY);
                 }
-            }
-            else
-            {
-                Debug.LogError("VideoGridManager is not assigned in MainController.");
             }
         }
         
@@ -254,7 +176,6 @@ namespace DogaShiwakeru
                 _currentVolume = Mathf.Clamp01(_currentVolume);
                 _volumeDisplayText = $"Volume: {_currentVolume:P0}";
                 _volumeDisplayTimer = VOLUME_DISPLAY_DURATION;
-                Debug.Log($"Volume set to: {_currentVolume:P0}");
                 ApplyGlobalVolume();
             }
 
@@ -262,7 +183,6 @@ namespace DogaShiwakeru
             {
                 if (videoGridManager.GetSelectedVideoIndex() == -1)
                 {
-                    Debug.Log("Escape pressed with no video selected. Opening directory selection dialog.");
                     OpenDirectoryDialog();
                 }
                 else
@@ -271,9 +191,9 @@ namespace DogaShiwakeru
                     if (_isCurrentlyFullscreen) _isCurrentlyFullscreen = false;
                 }
             }
-
-            if (Input.GetKeyDown(KeyCode.D)) HandleFileOperation("del");
-            if (Input.GetKeyDown(KeyCode.N)) HandleFileOperation("nice");
+            
+            if (Input.GetKeyDown(KeyCode.D)) HandleFileOperation(Path.Combine(_currentVideoDirectory, "del"));
+            if (Input.GetKeyDown(KeyCode.N)) HandleFileOperation(Path.Combine(_currentVideoDirectory, "nice"));
 
             if (Input.GetKeyDown(KeyCode.S))
             {
@@ -283,11 +203,6 @@ namespace DogaShiwakeru
                     _saveModeInputString = "";
                     _saveModeSuggestionIndex = -1;
                     UpdateSaveSuggestions();
-                    Debug.Log("Entered Save Mode.");
-                }
-                else
-                {
-                    Debug.LogWarning("No video selected to save.");
                 }
             }
             
@@ -310,18 +225,16 @@ namespace DogaShiwakeru
             }
         }
         
-        private void HandleFileOperation(string folderName)
+        private void HandleFileOperation(string destFolderPath)
         {
             VideoPlayerUI selectedVideo = videoGridManager.GetSelectedVideoUI();
             if (selectedVideo != null && !string.IsNullOrEmpty(_currentVideoDirectory))
             {
                 int currentIndex = videoGridManager.GetSelectedVideoIndex();
                 string sourcePath = selectedVideo.GetVideoPath();
-                string destFolderPath = Path.Combine(_currentVideoDirectory, folderName);
 
                 if (_videoFileManager.MoveVideoFile(sourcePath, destFolderPath))
                 {
-                    Debug.Log($"Video moved to '{folderName}' folder: {sourcePath}");
                     LoadVideos(_currentVideoDirectory, currentIndex);
                 }
             }
@@ -332,34 +245,25 @@ namespace DogaShiwakeru
             _saveModeSuggestions.Clear();
             _saveModeSuggestionIndex = -1;
             if (string.IsNullOrEmpty(_saveModeInputString) || string.IsNullOrEmpty(_currentVideoDirectory)) return;
-
-            try
+            var subDirs = Directory.GetDirectories(_currentVideoDirectory);
+            foreach (var dir in subDirs)
             {
-                var subDirs = Directory.GetDirectories(_currentVideoDirectory);
-                foreach (var dir in subDirs)
+                string dirName = new DirectoryInfo(dir).Name;
+                if (dirName.StartsWith(_saveModeInputString, System.StringComparison.OrdinalIgnoreCase))
                 {
-                    string dirName = new DirectoryInfo(dir).Name;
-                    if (dirName.StartsWith(_saveModeInputString, System.StringComparison.OrdinalIgnoreCase))
-                    {
-                        _saveModeSuggestions.Add(dirName);
-                    }
+                    _saveModeSuggestions.Add(dirName);
                 }
-                if (_saveModeSuggestions.Count > 0) _saveModeSuggestionIndex = 0;
             }
-            catch(System.Exception e) { Debug.LogError($"Error searching for subdirectories: {e.Message}"); }
+            if (_saveModeSuggestions.Count > 0) _saveModeSuggestionIndex = 0;
         }
 
         private void PerformSaveAction()
         {
             string targetFolderName = _saveModeInputString.Trim();
-            if (string.IsNullOrEmpty(targetFolderName))
+            if (!string.IsNullOrEmpty(targetFolderName))
             {
-                Debug.LogWarning("Save folder name is empty. Aborting save.");
-                _isSaveModeActive = false;
-                return;
+                 HandleFileOperation(Path.Combine(_currentVideoDirectory, targetFolderName));
             }
-            
-            HandleFileOperation(targetFolderName);
             _isSaveModeActive = false;
         }
         
@@ -386,7 +290,6 @@ namespace DogaShiwakeru
                         {
                             _saveModeSuggestionIndex = (_saveModeSuggestionIndex + 1) % _saveModeSuggestions.Count;
                             _saveModeInputString = _saveModeSuggestions[_saveModeSuggestionIndex];
-                            UpdateSaveSuggestions();
                         }
                         e.Use();
                     }
