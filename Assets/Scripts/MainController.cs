@@ -31,6 +31,7 @@ namespace DogaShiwakeru
         private bool _isSaveModeActive = false;
         private bool _isRenameModeActive = false;
         private bool _isNavigateDownModeActive = false;
+        private bool _isDriveSelectModeActive = false;
         private string _modalInputString = "";
         private List<string> _modalSuggestions = new List<string>();
         private int _modalSuggestionIndex = -1;
@@ -38,6 +39,7 @@ namespace DogaShiwakeru
         private bool _performSaveQueued = false;
         private bool _performRenameQueued = false;
         private bool _performNavigateDownQueued = false;
+        private bool _performDriveSelectQueued = false;
         private bool _focusResetQueued = false;
 
         private const string LAST_VIDEO_DIRECTORY_KEY = "LastVideoDirectory";
@@ -135,8 +137,9 @@ namespace DogaShiwakeru
             if (_performSaveQueued) { _performSaveQueued = false; PerformSaveAction(); }
             if (_performRenameQueued) { _performRenameQueued = false; PerformRenameAction(); }
             if (_performNavigateDownQueued) { _performNavigateDownQueued = false; PerformNavigateDownAction(); }
+            if (_performDriveSelectQueued) { _performDriveSelectQueued = false; PerformDriveSelectAction(); }
 
-            if (!_isSaveModeActive && !_isRenameModeActive && !_isNavigateDownModeActive)
+            if (!_isSaveModeActive && !_isRenameModeActive && !_isNavigateDownModeActive && !_isDriveSelectModeActive)
             {
                 HandleNormalInput();
             }
@@ -243,6 +246,13 @@ namespace DogaShiwakeru
                         {
                             LoadAllVideoPaths(parentDir.FullName);
                         }
+                        else // At drive root, show drive selector
+                        {
+                            _isDriveSelectModeActive = true;
+                            _modalInputString = "";
+                            UpdateDriveSuggestions();
+                            _focusResetQueued = true;
+                        }
                     }
                     else // Down Arrow
                     {
@@ -315,6 +325,25 @@ namespace DogaShiwakeru
                     _lastSelectedIndex = -1;
                 }
             }
+        }
+
+        private void UpdateDriveSuggestions()
+        {
+            _modalSuggestions.Clear();
+            _modalSuggestionIndex = -1;
+            try
+            {
+                var drives = DriveInfo.GetDrives();
+                foreach (var d in drives)
+                {
+                    if (d.IsReady)
+                    {
+                        _modalSuggestions.Add(d.Name);
+                    }
+                }
+                if (_modalSuggestions.Count > 0) _modalSuggestionIndex = 0;
+            }
+            catch(System.Exception e) { Debug.LogError($"Error getting drives: {e.Message}"); }
         }
 
         private void UpdateSubdirectorySuggestions()
@@ -399,6 +428,17 @@ namespace DogaShiwakeru
                 Debug.LogWarning($"Directory not found: {newPath}. Please correct the name or press Escape.");
             }
         }
+
+        private void PerformDriveSelectAction()
+        {
+            if (_modalSuggestionIndex >= 0 && _modalSuggestionIndex < _modalSuggestions.Count)
+            {
+                string targetDrive = _modalSuggestions[_modalSuggestionIndex];
+                LoadAllVideoPaths(targetDrive);
+            }
+            _isDriveSelectModeActive = false;
+            _focusResetQueued = true;
+        }
         
         private void ApplyGlobalVolume()
         {
@@ -411,7 +451,7 @@ namespace DogaShiwakeru
 
         void OnGUI()
         {
-            if (_isSaveModeActive || _isRenameModeActive || _isNavigateDownModeActive)
+            if (_isSaveModeActive || _isRenameModeActive || _isNavigateDownModeActive || _isDriveSelectModeActive)
             {
                 Event e = Event.current;
                 if (e.type == EventType.KeyDown)
@@ -421,16 +461,17 @@ namespace DogaShiwakeru
                         _isSaveModeActive = false; 
                         _isRenameModeActive = false; 
                         _isNavigateDownModeActive = false;
+                        _isDriveSelectModeActive = false;
                         _focusResetQueued = true; 
                         Input.ResetInputAxes(); 
                         e.Use(); 
                     }
-                    else if (e.keyCode == KeyCode.Tab && (_isSaveModeActive || _isNavigateDownModeActive)) 
+                    else if (e.keyCode == KeyCode.Tab && (_isSaveModeActive || _isNavigateDownModeActive || _isDriveSelectModeActive)) 
                     {
                         if (_modalSuggestions.Count > 0)
                         {
                             _modalSuggestionIndex = (_modalSuggestionIndex + 1) % _modalSuggestions.Count;
-                            _modalInputString = _modalSuggestions[_modalSuggestionIndex];
+                            if (!_isDriveSelectModeActive) _modalInputString = _modalSuggestions[_modalSuggestionIndex];
                         }
                         e.Use();
                     }
@@ -439,6 +480,7 @@ namespace DogaShiwakeru
                         if (_isRenameModeActive) _performRenameQueued = true; 
                         else if (_isSaveModeActive) _performSaveQueued = true;
                         else if (_isNavigateDownModeActive) _performNavigateDownQueued = true;
+                        else if (_isDriveSelectModeActive) _performDriveSelectQueued = true;
                         e.Use(); 
                     }
                 }
@@ -452,25 +494,30 @@ namespace DogaShiwakeru
                 if (_isRenameModeActive) boxTitle = "Rename File";
                 else if (_isSaveModeActive) boxTitle = "Save to Subfolder";
                 else if (_isNavigateDownModeActive) boxTitle = "Navigate to Subfolder";
+                else if (_isDriveSelectModeActive) boxTitle = "Select Drive";
 
                 GUI.Box(boxRect, boxTitle);
-                
-                GUI.SetNextControlName("SaveInput");
-                string newText = GUI.TextField(new Rect(boxRect.x + 10, boxRect.y + 30, boxRect.width - 20, 30), _modalInputString, new GUIStyle(GUI.skin.textField) { fontSize = 18 });
-                if (newText != _modalInputString) 
-                { 
-                    _modalInputString = newText;
-                    if (_isSaveModeActive || _isNavigateDownModeActive) UpdateSubdirectorySuggestions(); 
-                }
-                GUI.FocusControl("SaveInput");
 
-                if ((_isSaveModeActive || _isNavigateDownModeActive) && _modalSuggestions.Count > 0)
+                if (!_isDriveSelectModeActive)
+                {
+                    GUI.SetNextControlName("SaveInput");
+                    string newText = GUI.TextField(new Rect(boxRect.x + 10, boxRect.y + 30, boxRect.width - 20, 30), _modalInputString, new GUIStyle(GUI.skin.textField) { fontSize = 18 });
+                    if (newText != _modalInputString) 
+                    { 
+                        _modalInputString = newText;
+                        if (_isSaveModeActive || _isNavigateDownModeActive) UpdateSubdirectorySuggestions(); 
+                    }
+                    GUI.FocusControl("SaveInput");
+                }
+
+                if ((_isSaveModeActive || _isNavigateDownModeActive || _isDriveSelectModeActive) && _modalSuggestions.Count > 0)
                 {
                     GUIStyle sStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.MiddleLeft };
                     GUIStyle hStyle = new GUIStyle(sStyle) { normal = { textColor = Color.yellow } };
+                    float startY = _isDriveSelectModeActive ? boxRect.y + 30 : boxRect.y + 70;
                     for (int i = 0; i < _modalSuggestions.Count; i++)
                     {
-                        GUI.Label(new Rect(boxRect.x + 10, boxRect.y + 70 + (i * 25), boxRect.width - 20, 25), _modalSuggestions[i], (i == _modalSuggestionIndex) ? hStyle : sStyle);
+                        GUI.Label(new Rect(boxRect.x + 10, startY + (i * 25), boxRect.width - 20, 25), _modalSuggestions[i], (i == _modalSuggestionIndex) ? hStyle : sStyle);
                     }
                 }
             }
@@ -478,13 +525,16 @@ namespace DogaShiwakeru
             {
                 GUIStyle style = new GUIStyle { fontSize = 20, normal = { textColor = Color.white }, alignment = TextAnchor.UpperLeft };
                 
+                // Increased Y-offset to prevent text from being cut off at the top
+                const int TOP_MARGIN = 20;
+
                 GUI.color = Color.black;
-                GUI.Label(new Rect(11, 11, 300, 30), _videoCountText, style);
+                GUI.Label(new Rect(11, TOP_MARGIN + 1, 300, 30), _videoCountText, style);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(10, 10, 300, 30), _videoCountText, style);
+                GUI.Label(new Rect(10, TOP_MARGIN, 300, 30), _videoCountText, style);
 
                 style.alignment = TextAnchor.UpperRight;
-                Rect dirRect = new Rect(Screen.width - 710, 10, 700, 60);
+                Rect dirRect = new Rect(Screen.width - 710, TOP_MARGIN, 700, 60);
                 GUI.color = Color.black;
                 GUI.Label(new Rect(dirRect.x + 1, dirRect.y + 1, dirRect.width, dirRect.height), _currentVideoDirectory, style);
                 GUI.color = Color.white;
@@ -496,7 +546,8 @@ namespace DogaShiwakeru
                     style.fontSize = 20;
                     style.wordWrap = true; 
 
-                    Rect filenameRect = new Rect(10, 40, Screen.width - 20, 60); 
+                    // Increased Y-offset here as well
+                    Rect filenameRect = new Rect(10, TOP_MARGIN + 30, Screen.width - 20, 60); 
 
                     GUI.color = Color.black; 
                     GUI.Label(new Rect(filenameRect.x + 1, filenameRect.y + 1, filenameRect.width, filenameRect.height), _fullscreenDisplayFileName, style);
