@@ -5,6 +5,7 @@ using System.IO;
 using System;
 using TMPro;
 using UnityEngine.EventSystems;
+using System.Collections; // Added for IEnumerator and WaitForSeconds
 
 namespace DogaShiwakeru
 {
@@ -21,7 +22,6 @@ namespace DogaShiwakeru
         public TextMeshProUGUI timeDisplayText;
         
         private AspectRatioFitter _aspectRatioFitter;
-        private AspectRatioFitter.AspectMode _originalAspectMode;
 
         private const int THUMBNAIL_HEIGHT = 256;
 
@@ -44,10 +44,6 @@ namespace DogaShiwakeru
             if (videoDisplay != null)
             {
                 _aspectRatioFitter = videoDisplay.GetComponent<AspectRatioFitter>();
-                if (_aspectRatioFitter != null)
-                {
-                    _originalAspectMode = _aspectRatioFitter.aspectMode;
-                }
             }
 
             _originalLocalScale = transform.localScale;
@@ -223,10 +219,8 @@ namespace DogaShiwakeru
 
             if (_isFullScreen)
             {
-                if (_aspectRatioFitter != null)
-                {
-                    _aspectRatioFitter.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
-                }
+                // We no longer touch the AspectRatioFitter. We just re-parent and stretch.
+                // The fitter on the child RawImage will continue to work within its new, larger parent.
                 
                 if (_originalParent == null)
                 {
@@ -245,25 +239,17 @@ namespace DogaShiwakeru
                 rootRectTransform.anchoredPosition = Vector2.zero;
                 rootRectTransform.localScale = Vector3.one;
                 
-                if (videoDisplayRectTransform != null)
-                {
-                    videoDisplayRectTransform.anchorMin = Vector2.zero;
-                    videoDisplayRectTransform.anchorMax = Vector2.one;
-                    videoDisplayRectTransform.sizeDelta = Vector2.zero;
-                    videoDisplayRectTransform.anchoredPosition = Vector2.zero;
-                }
-                
                 // Recreate RenderTexture for full screen resolution
                 if (videoPlayer.targetTexture != null) videoPlayer.targetTexture.Release();
                 videoPlayer.targetTexture = new RenderTexture(Screen.width, Screen.height, 0);
                 videoDisplay.texture = videoPlayer.targetTexture;
+
+                // Force a redraw by deactivating and reactivating the GameObject across one frame
+                StartCoroutine(RefreshDisplayCoroutine());
             }
             else
             {
-                if (_aspectRatioFitter != null)
-                {
-                    _aspectRatioFitter.aspectMode = _originalAspectMode;
-                }
+                // No need to touch the AspectRatioFitter here either.
 
                 transform.SetParent(_originalParent, true);
                 transform.SetSiblingIndex(_originalSiblingIndex);
@@ -274,6 +260,18 @@ namespace DogaShiwakeru
                 RecreateRenderTextureForThumbnail();
             }
             return _isFullScreen;
+        }
+
+        private System.Collections.IEnumerator RefreshDisplayCoroutine()
+        {
+            if (videoPlayer != null)
+            {
+                videoPlayer.enabled = false;
+                yield return new WaitForSeconds(0.5f); // Wait for 0.5 seconds
+                videoPlayer.enabled = true;
+                yield return new WaitForSeconds(0.5f); // Wait another 0.5 seconds
+                videoPlayer.Play();
+            }
         }
 
         private void OnVideoEnd(VideoPlayer vp) { }
