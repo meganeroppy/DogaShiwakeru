@@ -22,6 +22,7 @@ namespace DogaShiwakeru
         public TextMeshProUGUI timeDisplayText;
         
         private AspectRatioFitter _aspectRatioFitter;
+        private string _totalTimeFormatted;
 
         private const int THUMBNAIL_HEIGHT = 256;
 
@@ -37,40 +38,313 @@ namespace DogaShiwakeru
         private Transform _originalParent;
         private int _originalSiblingIndex;
 
-        void Awake()
-        {
-            if (videoPlayer == null) videoPlayer = GetComponent<VideoPlayer>();
+                void Awake()
 
-            if (videoDisplay != null)
-            {
-                _aspectRatioFitter = videoDisplay.GetComponent<AspectRatioFitter>();
-            }
+                {
 
-            _originalLocalScale = transform.localScale;
-            _originalLocalPosition = transform.localPosition;
-            _originalParent = transform.parent;
-            _originalSiblingIndex = transform.GetSiblingIndex();
+                    if (videoPlayer == null) videoPlayer = GetComponent<VideoPlayer>();
 
-            videoPlayer.playOnAwake = false;
-            videoPlayer.isLooping = true;
-            videoPlayer.renderMode = VideoRenderMode.RenderTexture;
+        
 
-            videoPlayer.prepareCompleted += OnPrepareCompleted;
-            videoPlayer.loopPointReached += OnVideoEnd;
+                    if (videoDisplay != null)
 
-            if (progressSlider != null)
-            {
-                progressSlider.onValueChanged.AddListener(OnSliderValueChanged);
-            }
+                    {
 
-            UpdateProgressUI(false);
-            SetSelected(false);
-        }
+                        _aspectRatioFitter = videoDisplay.GetComponent<AspectRatioFitter>();
+
+                    }
+
+        
+
+                                                        if (timeDisplayText != null)
+
+        
+
+                                                        {
+
+        
+
+                                                            timeDisplayText.enableAutoSizing = false;
+
+        
+
+                                                            timeDisplayText.fontSize = 20;
+
+        
+
+                                            
+
+        
+
+                                                                            var rectTransform = timeDisplayText.rectTransform;
+
+        
+
+                                            
+
+        
+
+                                                                            if (rectTransform != null)
+
+        
+
+                                            
+
+        
+
+                                                                            {
+
+        
+
+                                            
+
+        
+
+                                                                                // Anchor to the bottom-right corner
+
+        
+
+                                            
+
+        
+
+                                                                                rectTransform.anchorMin = new Vector2(1, 0);
+
+        
+
+                                            
+
+        
+
+                                                                                rectTransform.anchorMax = new Vector2(1, 0);
+
+        
+
+                                            
+
+        
+
+                                                                                rectTransform.pivot = new Vector2(1, 0);
+
+        
+
+                                            
+
+        
+
+                                                                                
+
+        
+
+                                            
+
+        
+
+                                                                                                    // Add some padding from the corner
+
+        
+
+                                            
+
+        
+
+                                                                                
+
+        
+
+                                            
+
+        
+
+                                                                                                    rectTransform.anchoredPosition = new Vector2(-10, 20);
+
+        
+
+                                            
+
+        
+
+                                                                                
+
+        
+
+                                            
+
+        
+
+                                                                                                    
+
+        
+
+                                            
+
+        
+
+                                                                                
+
+        
+
+                                            
+
+        
+
+                                                                                                    // Ensure enough space for the text and prevent wrapping
+
+        
+
+                                            
+
+        
+
+                                                                                rectTransform.sizeDelta = new Vector2(150, 30); // Width 150, Height 30
+
+        
+
+                                            
+
+        
+
+                                                                            }
+
+        
+
+                                            
+
+        
+
+                                                                            
+
+        
+
+                                            
+
+        
+
+                                                                                                            // Align the text to the right
+
+        
+
+                                            
+
+        
+
+                                                                            
+
+        
+
+                                            
+
+        
+
+                                                                                                            timeDisplayText.alignment = TMPro.TextAlignmentOptions.BottomRight;
+
+        
+
+                                            
+
+        
+
+                                                                            
+
+        
+
+                                            
+
+        
+
+                                                                                                            timeDisplayText.enableWordWrapping = false; // Prevent vertical wrapping
+
+        
+
+                                            
+
+        
+
+                                                                            
+
+        
+
+                                            
+
+        
+
+                                                                                                        }
+
+        
+
+                                            
+
+        
+
+                                                                            
+
+        
+
+                                            
+
+        
+
+                                                                                            
+
+        
+
+                                            
+
+        
+
+                                                                            
+
+        
+
+                                            
+
+        
+
+                                                                                                        _originalLocalScale = transform.localScale;
+
+                    _originalLocalPosition = transform.localPosition;
+
+                    _originalParent = transform.parent;
+
+                    _originalSiblingIndex = transform.GetSiblingIndex();
+
+        
+
+                    videoPlayer.playOnAwake = false;
+
+                    videoPlayer.isLooping = true;
+
+                    videoPlayer.renderMode = VideoRenderMode.RenderTexture;
+
+        
+
+                    videoPlayer.prepareCompleted += OnPrepareCompleted;
+
+                    videoPlayer.loopPointReached += OnVideoEnd;
+
+        
+
+                    if (progressSlider != null)
+
+                    {
+
+                        progressSlider.onValueChanged.AddListener(OnSliderValueChanged);
+
+                    }
+
+        
+
+                    UpdateProgressUI(false);
+
+                    SetSelected(false);
+
+                }
 
         public void Init(string path)
         {
             _videoPath = path;
             _isActivated = false;
+            _totalTimeFormatted = "00:00.0"; // Reset
             videoDisplay.texture = null;
             if (videoPlayer.targetTexture != null)
             {
@@ -107,9 +381,8 @@ namespace DogaShiwakeru
                 }
                 if (timeDisplayText != null)
                 {
-                    string currentTime = TimeSpan.FromSeconds(videoPlayer.time).ToString(@"mm\:ss");
-                    string totalTime = TimeSpan.FromSeconds(videoPlayer.length).ToString(@"mm\:ss");
-                    timeDisplayText.text = $"{currentTime} / {totalTime}";
+                    string currentTime = FormatTime(videoPlayer.time);
+                    timeDisplayText.text = $"{currentTime} / {_totalTimeFormatted}";
                 }
             }
         }
@@ -128,6 +401,8 @@ namespace DogaShiwakeru
         private void OnPrepareCompleted(VideoPlayer source)
         {
             RecreateRenderTextureForThumbnail();
+            
+            _totalTimeFormatted = FormatTime(source.length);
 
             if (_aspectRatioFitter != null && source.texture != null && source.texture.height > 0)
             {
@@ -141,6 +416,12 @@ namespace DogaShiwakeru
                 source.SetDirectAudioVolume(i, _volume);
             }
             source.Play();
+        }
+
+        private string FormatTime(double seconds)
+        {
+            TimeSpan time = TimeSpan.FromSeconds(seconds);
+            return string.Format("{0:00}:{1:00}.{2}", (int)time.TotalMinutes, time.Seconds, time.Milliseconds / 100);
         }
         
         private void RecreateRenderTextureForThumbnail()

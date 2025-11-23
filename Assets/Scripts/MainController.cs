@@ -168,7 +168,7 @@ namespace DogaShiwakeru
                     _focusResetQueued = true;
                 }
             }
-            else if (Input.GetKeyDown(KeyCode.R))
+            else if (Input.GetKeyDown(KeyCode.N))
             {
                 if (currentVideo != null)
                 {
@@ -177,6 +177,14 @@ namespace DogaShiwakeru
                     _modalSuggestions.Clear();
                     _modalSuggestionIndex = -1;
                     _focusResetQueued = true;
+                }
+            }
+            else if (Input.GetKeyDown(KeyCode.R))
+            {
+                // Reload all video thumbnails
+                if (!string.IsNullOrEmpty(_currentVideoDirectory))
+                {
+                    LoadAllVideoPaths(_currentVideoDirectory);
                 }
             }
             else if (Input.GetKeyDown(KeyCode.D))
