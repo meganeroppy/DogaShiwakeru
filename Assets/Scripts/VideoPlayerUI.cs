@@ -10,22 +10,28 @@ namespace DogaShiwakeru
 {
     public class VideoPlayerUI : MonoBehaviour
     {
+        [Header("Component References")]
         public RawImage videoDisplay;
         public VideoPlayer videoPlayer;
         public GameObject selectionHighlight;
-        public RectTransform videoDisplayRectTransform;
+        public RectTransform videoDisplayRectTransform; // The child object with the RawImage
+        
+        [Header("UI Elements")]
         public Slider progressSlider;
         public TextMeshProUGUI timeDisplayText;
+        
+        private AspectRatioFitter _aspectRatioFitter;
+        private AspectRatioFitter.AspectMode _originalAspectMode;
 
-        private const int THUMBNAIL_RESOLUTION = 256;
+        private const int THUMBNAIL_HEIGHT = 256;
 
         private string _videoPath;
         private bool _isMuted = true;
         private float _volume = 1.0f;
         private bool _isFullScreen = false;
-        private bool _isActivated = false; // Flag to check if player is prepared/preparing
+        private bool _isActivated = false;
 
-        private Vector2 _originalSizeDelta;
+        // Store original transform state
         private Vector3 _originalLocalScale;
         private Vector3 _originalLocalPosition;
         private Transform _originalParent;
@@ -33,11 +39,17 @@ namespace DogaShiwakeru
 
         void Awake()
         {
-            if (videoDisplay == null) videoDisplay = GetComponent<RawImage>();
             if (videoPlayer == null) videoPlayer = GetComponent<VideoPlayer>();
-            if (videoDisplayRectTransform == null) videoDisplayRectTransform = GetComponent<RectTransform>();
 
-            _originalSizeDelta = videoDisplayRectTransform.sizeDelta;
+            if (videoDisplay != null)
+            {
+                _aspectRatioFitter = videoDisplay.GetComponent<AspectRatioFitter>();
+                if (_aspectRatioFitter != null)
+                {
+                    _originalAspectMode = _aspectRatioFitter.aspectMode;
+                }
+            }
+
             _originalLocalScale = transform.localScale;
             _originalLocalPosition = transform.localPosition;
             _originalParent = transform.parent;
@@ -63,26 +75,25 @@ namespace DogaShiwakeru
         {
             _videoPath = path;
             _isActivated = false;
-            // Clear texture from previous use if this is a pooled object
             videoDisplay.texture = null;
             if (videoPlayer.targetTexture != null)
             {
                 videoPlayer.targetTexture.Release();
                 videoPlayer.targetTexture = null;
             }
-            // Stop any ongoing video preparation/playback
             videoPlayer.Stop();
             videoPlayer.url = null;
         }
 
         public void Activate()
         {
-            if (_isActivated) return; // Don't re-activate if already done
-
+            if (_isActivated) return;
             _isActivated = true;
+            
+            // A temporary small texture is fine, it will be recreated OnPrepareCompleted
             if (videoPlayer.targetTexture == null)
             {
-                 videoPlayer.targetTexture = new RenderTexture(THUMBNAIL_RESOLUTION, THUMBNAIL_RESOLUTION, 0);
+                 videoPlayer.targetTexture = new RenderTexture(THUMBNAIL_HEIGHT, THUMBNAIL_HEIGHT, 0);
                  videoDisplay.texture = videoPlayer.targetTexture;
             }
             
@@ -111,27 +122,23 @@ namespace DogaShiwakeru
         {
             if (videoPlayer.isPrepared) { videoPlayer.time = videoPlayer.length * value; }
         }
-
-        private System.Collections.IEnumerator ResetFocusAfterDelay()
-        {
-            yield return null; // Wait for one frame
-            EventSystem.current.SetSelectedGameObject(null);
-        }
         
         private void UpdateProgressUI(bool isVisible)
         {
-            if (progressSlider != null)
-            {
-                progressSlider.gameObject.SetActive(isVisible);
-            }
-            if (timeDisplayText != null)
-            {
-                timeDisplayText.gameObject.SetActive(isVisible);
-            }
+            if (progressSlider != null) progressSlider.gameObject.SetActive(isVisible);
+            if (timeDisplayText != null) timeDisplayText.gameObject.SetActive(isVisible);
         }
 
         private void OnPrepareCompleted(VideoPlayer source)
         {
+            RecreateRenderTextureForThumbnail();
+
+            if (_aspectRatioFitter != null && source.texture != null && source.texture.height > 0)
+            {
+                float videoAspectRatio = (float)source.texture.width / (float)source.texture.height;
+                _aspectRatioFitter.aspectRatio = videoAspectRatio;
+            }
+
             for (ushort i = 0; i < source.audioTrackCount; i++)
             {
                 source.SetDirectAudioMute(i, _isMuted);
@@ -139,14 +146,18 @@ namespace DogaShiwakeru
             }
             source.Play();
         }
-
-        public void SeekToPercent(float percent)
+        
+        private void RecreateRenderTextureForThumbnail()
         {
-            if (videoPlayer.isPrepared && videoPlayer.length > 0)
-            {
-                float clampedPercent = Mathf.Clamp01(percent);
-                videoPlayer.time = videoPlayer.length * clampedPercent;
-            }
+            if (videoPlayer.texture == null || videoPlayer.texture.height == 0) return; // Use videoPlayer.texture for original dimensions
+
+            float videoAspectRatio = (float)videoPlayer.texture.width / (float)videoPlayer.texture.height;
+            int width = Mathf.RoundToInt(THUMBNAIL_HEIGHT * videoAspectRatio);
+            int height = THUMBNAIL_HEIGHT;
+
+            if (videoPlayer.targetTexture != null) videoPlayer.targetTexture.Release();
+            videoPlayer.targetTexture = new RenderTexture(width, height, 0);
+            videoDisplay.texture = videoPlayer.targetTexture;
         }
 
         public string GetVideoPath() => _videoPath;
@@ -161,6 +172,16 @@ namespace DogaShiwakeru
                 videoPlayer.time = newTime;
             }
         }
+
+        public void SeekToPercent(float percent)
+        {
+            if (videoPlayer.isPrepared && videoPlayer.length > 0)
+            {
+                float clampedPercent = Mathf.Clamp01(percent);
+                videoPlayer.time = videoPlayer.length * clampedPercent;
+            }
+        }
+
         public void ToggleMute() => SetMute(!_isMuted);
         public void SetVolume(float volume)
         {
@@ -182,19 +203,12 @@ namespace DogaShiwakeru
         }
         public void SetPlaybackSpeed(float speed)
         {
-            // Ensure the video is activated (prepared) before setting speed
-            if (!_isActivated)
-            {
-                Activate();
-            }
+            if (!_isActivated) Activate();
             videoPlayer.playbackSpeed = speed;
         }
         public void SetSelected(bool isSelected)
         {
-            if (selectionHighlight != null)
-            {
-                selectionHighlight.SetActive(isSelected && !_isFullScreen);
-            }
+            if (selectionHighlight != null) selectionHighlight.SetActive(isSelected);
             UpdateProgressUI(_isFullScreen);
         }
         public bool IsFullscreen() => _isFullScreen;
@@ -203,45 +217,63 @@ namespace DogaShiwakeru
             _isFullScreen = !_isFullScreen;
             
             UpdateProgressUI(_isFullScreen); 
-            if (selectionHighlight != null)
-            {
-                selectionHighlight.SetActive(!_isFullScreen);
-            }
+            if (selectionHighlight != null) selectionHighlight.SetActive(!_isFullScreen);
+
+            var rootRectTransform = (RectTransform)transform;
 
             if (_isFullScreen)
             {
+                if (_aspectRatioFitter != null)
+                {
+                    _aspectRatioFitter.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
+                }
+                
                 if (_originalParent == null)
                 {
                     _originalParent = transform.parent;
                     _originalSiblingIndex = transform.GetSiblingIndex();
+                    _originalLocalScale = transform.localScale;
+                    _originalLocalPosition = transform.localPosition;
                 }
 
                 transform.SetParent(canvasRectTransform, true);
-                videoDisplayRectTransform.anchorMin = Vector2.zero;
-                videoDisplayRectTransform.anchorMax = Vector2.one;
-                videoDisplayRectTransform.sizeDelta = Vector2.zero;
-                videoDisplayRectTransform.anchoredPosition = Vector2.zero;
                 transform.SetAsLastSibling();
 
+                rootRectTransform.anchorMin = Vector2.zero;
+                rootRectTransform.anchorMax = Vector2.one;
+                rootRectTransform.sizeDelta = Vector2.zero;
+                rootRectTransform.anchoredPosition = Vector2.zero;
+                rootRectTransform.localScale = Vector3.one;
+                
+                if (videoDisplayRectTransform != null)
+                {
+                    videoDisplayRectTransform.anchorMin = Vector2.zero;
+                    videoDisplayRectTransform.anchorMax = Vector2.one;
+                    videoDisplayRectTransform.sizeDelta = Vector2.zero;
+                    videoDisplayRectTransform.anchoredPosition = Vector2.zero;
+                }
+                
+                // Recreate RenderTexture for full screen resolution
                 if (videoPlayer.targetTexture != null) videoPlayer.targetTexture.Release();
                 videoPlayer.targetTexture = new RenderTexture(Screen.width, Screen.height, 0);
                 videoDisplay.texture = videoPlayer.targetTexture;
             }
             else
             {
+                if (_aspectRatioFitter != null)
+                {
+                    _aspectRatioFitter.aspectMode = _originalAspectMode;
+                }
+
                 transform.SetParent(_originalParent, true);
                 transform.SetSiblingIndex(_originalSiblingIndex);
-                videoDisplayRectTransform.sizeDelta = _originalSizeDelta;
                 transform.localScale = _originalLocalScale;
                 transform.localPosition = _originalLocalPosition;
-                videoDisplayRectTransform.anchorMin = new Vector2(0.5f, 0.5f);
-                videoDisplayRectTransform.anchorMax = new Vector2(0.5f, 0.5f);
 
-                if (videoPlayer.targetTexture != null) videoPlayer.targetTexture.Release();
-                videoPlayer.targetTexture = new RenderTexture(THUMBNAIL_RESOLUTION, THUMBNAIL_RESOLUTION, 0);
-                videoDisplay.texture = videoPlayer.targetTexture;
+                // Recreate RenderTexture for thumbnail resolution
+                RecreateRenderTextureForThumbnail();
             }
-            return _isFullScreen; // CRITICAL: Ensure return statement is always present
+            return _isFullScreen;
         }
 
         private void OnVideoEnd(VideoPlayer vp) { }
