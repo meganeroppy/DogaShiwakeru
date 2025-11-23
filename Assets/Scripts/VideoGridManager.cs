@@ -179,8 +179,8 @@ namespace DogaShiwakeru
             if (videoUI != null && videoUI.IsFullscreen())
             {
                 videoUI.ToggleFullscreen(canvasRectTransform);
-                // After exiting fullscreen, apply the performance rule again
-                videoUI.SetPlaybackSpeed(0.25f); // Set to 0.25f when exiting fullscreen
+                // After exiting fullscreen, the video is still the selected one, so it should play at full speed.
+                videoUI.SetPlaybackSpeed(1.0f); 
             }
             _fullscreenVideoIndex = -1;
         }
