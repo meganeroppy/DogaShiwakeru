@@ -244,8 +244,11 @@ namespace DogaShiwakeru
                 videoPlayer.targetTexture = new RenderTexture(Screen.width, Screen.height, 0);
                 videoDisplay.texture = videoPlayer.targetTexture;
 
-                // Force a redraw by deactivating and reactivating the GameObject across one frame
-                StartCoroutine(RefreshDisplayCoroutine());
+                // Force a redraw for vertical videos only to fix aspect ratio issues without impacting horizontal videos.
+                if (videoPlayer.texture != null && videoPlayer.texture.height > videoPlayer.texture.width)
+                {
+                    StartCoroutine(RefreshDisplayCoroutine());
+                }
             }
             else
             {
@@ -267,9 +270,9 @@ namespace DogaShiwakeru
             if (videoPlayer != null)
             {
                 videoPlayer.enabled = false;
-                yield return new WaitForSeconds(0.5f); // Wait for 0.5 seconds
+                yield return new WaitForSeconds(0.1f); // Wait for 0.1 seconds
                 videoPlayer.enabled = true;
-                yield return new WaitForSeconds(0.5f); // Wait another 0.5 seconds
+                yield return new WaitForSeconds(0.1f); // Wait another 0.1 seconds
                 videoPlayer.Play();
             }
         }
