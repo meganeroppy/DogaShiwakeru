@@ -31,6 +31,7 @@ namespace DogaShiwakeru
         private float _volume = 1.0f;
         private bool _isFullScreen = false;
         private bool _isActivated = false;
+        private float _targetPlaybackSpeed = 1.0f;
 
         // Store original transform state
         private Vector3 _originalLocalScale;
@@ -345,6 +346,7 @@ namespace DogaShiwakeru
             _videoPath = path;
             _isActivated = false;
             _totalTimeFormatted = "00:00.0"; // Reset
+            _targetPlaybackSpeed = 1.0f; // Reset speed target
             videoDisplay.texture = null;
             if (videoPlayer.targetTexture != null)
             {
@@ -401,6 +403,7 @@ namespace DogaShiwakeru
         private void OnPrepareCompleted(VideoPlayer source)
         {
             UpdateRenderTexture();
+            _totalTimeFormatted = FormatTime(source.length);
 
             // Setup Audio
             for (ushort i = 0; i < source.audioTrackCount; i++)
@@ -408,6 +411,7 @@ namespace DogaShiwakeru
                 source.SetDirectAudioMute(i, _isMuted);
                 source.SetDirectAudioVolume(i, _volume);
             }
+            source.playbackSpeed = _targetPlaybackSpeed; // Enforce playback speed
             source.Play();
         }
 
@@ -419,9 +423,13 @@ namespace DogaShiwakeru
         
         private void UpdateRenderTexture()
         {
-            if (videoPlayer.texture == null || videoPlayer.texture.height == 0) return;
+            float videoAspectRatio = 1.777f; // Default 16:9
+            if (videoPlayer.texture != null && videoPlayer.texture.height > 0)
+            {
+                videoAspectRatio = (float)videoPlayer.texture.width / (float)videoPlayer.texture.height;
+            }
+            // if (videoPlayer.texture == null || videoPlayer.texture.height == 0) return; // Removed early exit
 
-            float videoAspectRatio = (float)videoPlayer.texture.width / (float)videoPlayer.texture.height;
             int width, height;
 
             if (_isFullScreen)
@@ -509,6 +517,7 @@ namespace DogaShiwakeru
         public void SetPlaybackSpeed(float speed)
         {
             if (!_isActivated) Activate();
+            _targetPlaybackSpeed = speed;
             videoPlayer.playbackSpeed = speed;
         }
         public void SetSelected(bool isSelected)
