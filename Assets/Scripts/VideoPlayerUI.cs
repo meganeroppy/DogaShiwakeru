@@ -400,16 +400,9 @@ namespace DogaShiwakeru
 
         private void OnPrepareCompleted(VideoPlayer source)
         {
-            RecreateRenderTextureForThumbnail();
-            
-            _totalTimeFormatted = FormatTime(source.length);
+            UpdateRenderTexture();
 
-            if (_aspectRatioFitter != null && source.texture != null && source.texture.height > 0)
-            {
-                float videoAspectRatio = (float)source.texture.width / (float)source.texture.height;
-                _aspectRatioFitter.aspectRatio = videoAspectRatio;
-            }
-
+            // Setup Audio
             for (ushort i = 0; i < source.audioTrackCount; i++)
             {
                 source.SetDirectAudioMute(i, _isMuted);
@@ -424,17 +417,52 @@ namespace DogaShiwakeru
             return string.Format("{0:00}:{1:00}.{2}", (int)time.TotalMinutes, time.Seconds, time.Milliseconds / 100);
         }
         
-        private void RecreateRenderTextureForThumbnail()
+        private void UpdateRenderTexture()
         {
-            if (videoPlayer.texture == null || videoPlayer.texture.height == 0) return; // Use videoPlayer.texture for original dimensions
+            if (videoPlayer.texture == null || videoPlayer.texture.height == 0) return;
 
             float videoAspectRatio = (float)videoPlayer.texture.width / (float)videoPlayer.texture.height;
-            int width = Mathf.RoundToInt(THUMBNAIL_HEIGHT * videoAspectRatio);
-            int height = THUMBNAIL_HEIGHT;
+            int width, height;
 
-            if (videoPlayer.targetTexture != null) videoPlayer.targetTexture.Release();
+            if (_isFullScreen)
+            {
+                // Calculate dimensions to fit the screen while maintaining aspect ratio
+                float screenRatio = (float)Screen.width / Screen.height;
+                if (videoAspectRatio > screenRatio)
+                {
+                    // Video is wider than screen, fit to width
+                    width = Screen.width;
+                    height = Mathf.RoundToInt(width / videoAspectRatio);
+                }
+                else
+                {
+                    // Video is taller than screen, fit to height
+                    height = Screen.height;
+                    width = Mathf.RoundToInt(height * videoAspectRatio);
+                }
+            }
+            else
+            {
+                height = THUMBNAIL_HEIGHT;
+                width = Mathf.RoundToInt(height * videoAspectRatio);
+            }
+
+            if (videoPlayer.targetTexture != null)
+            {
+                // Optimization: Only release and recreate if dimensions changed
+                if (videoPlayer.targetTexture.width == width && videoPlayer.targetTexture.height == height) return;
+                
+                videoPlayer.targetTexture.Release();
+            }
+            
             videoPlayer.targetTexture = new RenderTexture(width, height, 0);
             videoDisplay.texture = videoPlayer.targetTexture;
+            
+            // Ensure AspectRatioFitter is updated
+            if (_aspectRatioFitter != null)
+            {
+                _aspectRatioFitter.aspectRatio = videoAspectRatio;
+            }
         }
 
         public string GetVideoPath() => _videoPath;
@@ -520,16 +548,10 @@ namespace DogaShiwakeru
                 rootRectTransform.anchoredPosition = Vector2.zero;
                 rootRectTransform.localScale = Vector3.one;
                 
-                // Recreate RenderTexture for full screen resolution
-                if (videoPlayer.targetTexture != null) videoPlayer.targetTexture.Release();
-                videoPlayer.targetTexture = new RenderTexture(Screen.width, Screen.height, 0);
-                videoDisplay.texture = videoPlayer.targetTexture;
-
-                // Force a redraw for vertical videos only to fix aspect ratio issues without impacting horizontal videos.
-                if (videoPlayer.texture != null && videoPlayer.texture.height > videoPlayer.texture.width)
-                {
-                    StartCoroutine(RefreshDisplayCoroutine());
-                }
+                rootRectTransform.localScale = Vector3.one;
+                
+                // Update texture for full screen resolution with correct aspect ratio
+                UpdateRenderTexture();
             }
             else
             {
@@ -541,21 +563,9 @@ namespace DogaShiwakeru
                 transform.localPosition = _originalLocalPosition;
 
                 // Recreate RenderTexture for thumbnail resolution
-                RecreateRenderTextureForThumbnail();
+                UpdateRenderTexture();
             }
             return _isFullScreen;
-        }
-
-        private System.Collections.IEnumerator RefreshDisplayCoroutine()
-        {
-            if (videoPlayer != null)
-            {
-                videoPlayer.enabled = false;
-                yield return new WaitForSeconds(0.1f); // Wait for 0.1 seconds
-                videoPlayer.enabled = true;
-                yield return new WaitForSeconds(0.1f); // Wait another 0.1 seconds
-                videoPlayer.Play();
-            }
         }
 
         private void OnVideoEnd(VideoPlayer vp) { }
