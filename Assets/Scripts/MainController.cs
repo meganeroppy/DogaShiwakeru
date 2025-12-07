@@ -537,7 +537,16 @@ namespace DogaShiwakeru
                     {
                         if (_modalSuggestions.Count > 0)
                         {
-                            _modalSuggestionIndex = (_modalSuggestionIndex + 1) % _modalSuggestions.Count;
+                            if (e.shift)
+                            {
+                                 _modalSuggestionIndex--;
+                                 if (_modalSuggestionIndex < 0) _modalSuggestionIndex = _modalSuggestions.Count - 1;
+                            }
+                            else
+                            {
+                                _modalSuggestionIndex = (_modalSuggestionIndex + 1) % _modalSuggestions.Count;
+                            }
+                            
                             if (!_isDriveSelectModeActive && !_isBookmarkModeActive) _modalInputString = _modalSuggestions[_modalSuggestionIndex];
                         }
                         e.Use();
