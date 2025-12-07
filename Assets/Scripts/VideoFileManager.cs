@@ -27,6 +27,21 @@ namespace DogaShiwakeru
             string fileName = Path.GetFileName(sourceFilePath);
             string destinationFilePath = Path.Combine(destinationDirectory, fileName);
 
+            // Handle duplicate filenames
+            if (File.Exists(destinationFilePath))
+            {
+                string fileNameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+                string extension = Path.GetExtension(fileName);
+                int count = 1;
+                
+                while (File.Exists(destinationFilePath))
+                {
+                    string newFileName = $"{fileNameWithoutExt} ({count}){extension}";
+                    destinationFilePath = Path.Combine(destinationDirectory, newFileName);
+                    count++;
+                }
+            }
+
             try
             {
                 File.Move(sourceFilePath, destinationFilePath);
