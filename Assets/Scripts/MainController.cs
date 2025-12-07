@@ -32,6 +32,7 @@ namespace DogaShiwakeru
         private bool _isRenameModeActive = false;
         private bool _isNavigateDownModeActive = false;
         private bool _isDriveSelectModeActive = false;
+        private bool _isBookmarkModeActive = false;
         private string _modalInputString = "";
         private List<string> _modalSuggestions = new List<string>();
         private int _modalSuggestionIndex = -1;
@@ -40,10 +41,14 @@ namespace DogaShiwakeru
         private bool _performRenameQueued = false;
         private bool _performNavigateDownQueued = false;
         private bool _performDriveSelectQueued = false;
+        private bool _performBookmarkJumpQueued = false;
         private bool _focusResetQueued = false;
+
+        private List<string> _bookmarks = new List<string>();
 
         private const string LAST_VIDEO_DIRECTORY_KEY = "LastVideoDirectory";
         private const string VOLUME_KEY = "LastVolumeLevel";
+        private const string BOOKMARKS_KEY = "AppBookmarks";
         
         // --- Methods ---
 
@@ -65,6 +70,7 @@ namespace DogaShiwakeru
             {
                 OpenDirectoryDialog();
             }
+            LoadBookmarks();
         }
 
         private void OpenDirectoryDialog()
@@ -137,9 +143,11 @@ namespace DogaShiwakeru
             if (_performSaveQueued) { _performSaveQueued = false; PerformSaveAction(); }
             if (_performRenameQueued) { _performRenameQueued = false; PerformRenameAction(); }
             if (_performNavigateDownQueued) { _performNavigateDownQueued = false; PerformNavigateDownAction(); }
+            if (_performNavigateDownQueued) { _performNavigateDownQueued = false; PerformNavigateDownAction(); }
             if (_performDriveSelectQueued) { _performDriveSelectQueued = false; PerformDriveSelectAction(); }
+            if (_performBookmarkJumpQueued) { _performBookmarkJumpQueued = false; PerformBookmarkJumpAction(); }
 
-            if (!_isSaveModeActive && !_isRenameModeActive && !_isNavigateDownModeActive && !_isDriveSelectModeActive)
+            if (!_isSaveModeActive && !_isRenameModeActive && !_isNavigateDownModeActive && !_isDriveSelectModeActive && !_isBookmarkModeActive)
             {
                 HandleNormalInput();
             }
@@ -285,14 +293,35 @@ namespace DogaShiwakeru
             {
                 if (currentVideo != null) currentVideo.ToggleMute();
             }
-            else if (Input.GetKeyDown(KeyCode.G))
+            else if (Input.GetKeyDown(KeyCode.Delete))
             {
                 if (currentVideo != null)
                 {
-                    string fileName = Path.GetFileNameWithoutExtension(currentVideo.GetVideoPath());
-                    string encodedFileName = UnityEngine.Networking.UnityWebRequest.EscapeURL(fileName);
-                    Application.OpenURL($"https://www.google.com/search?q={encodedFileName}");
+                    string sourcePath = currentVideo.GetVideoPath();
+                    // Permanently delete
+                    if (_videoFileManager.DeleteVideoFile(sourcePath))
+                    {
+                        _allVideoPaths.Remove(sourcePath);
+                        RefreshGridDisplay(videoGridManager.GetSelectedVideoIndex(), isFullscreen);
+                        _lastSelectedIndex = -1;
+                    }
                 }
+            }
+            else if (Input.GetKeyDown(KeyCode.B))
+            {
+                if (!string.IsNullOrEmpty(_currentVideoDirectory) && !_bookmarks.Contains(_currentVideoDirectory))
+                {
+                    _bookmarks.Add(_currentVideoDirectory);
+                    SaveBookmarks();
+                }
+            }
+            else if (Input.GetKeyDown(KeyCode.G))
+            {
+                 _isBookmarkModeActive = true;
+                 _modalInputString = "";
+                 _modalSuggestions = new List<string>(_bookmarks);
+                 _modalSuggestionIndex = _modalSuggestions.Count > 0 ? 0 : -1;
+                 _focusResetQueued = true;
             }
             else
             {
@@ -439,6 +468,43 @@ namespace DogaShiwakeru
             _isDriveSelectModeActive = false;
             _focusResetQueued = true;
         }
+
+        private void PerformBookmarkJumpAction()
+        {
+            if (_modalSuggestionIndex >= 0 && _modalSuggestionIndex < _modalSuggestions.Count)
+            {
+                string targetPath = _modalSuggestions[_modalSuggestionIndex];
+                if (Directory.Exists(targetPath))
+                {
+                    LoadAllVideoPaths(targetPath);
+                }
+            }
+            _isBookmarkModeActive = false;
+            _focusResetQueued = true;
+        }
+
+        private void LoadBookmarks()
+        {
+            string stored = PlayerPrefs.GetString(BOOKMARKS_KEY, "");
+            if (!string.IsNullOrEmpty(stored))
+            {
+                _bookmarks = stored.Split(new char[] { ';' }, System.StringSplitOptions.RemoveEmptyEntries).ToList();
+            }
+        }
+
+        private void SaveBookmarks()
+        {
+            if (_bookmarks.Count > 0)
+            {
+                string stored = string.Join(";", _bookmarks);
+                PlayerPrefs.SetString(BOOKMARKS_KEY, stored);
+            }
+            else
+            {
+                PlayerPrefs.DeleteKey(BOOKMARKS_KEY);
+            }
+            PlayerPrefs.Save();
+        }
         
         private void ApplyGlobalVolume()
         {
@@ -451,7 +517,7 @@ namespace DogaShiwakeru
 
         void OnGUI()
         {
-            if (_isSaveModeActive || _isRenameModeActive || _isNavigateDownModeActive || _isDriveSelectModeActive)
+            if (_isSaveModeActive || _isRenameModeActive || _isNavigateDownModeActive || _isDriveSelectModeActive || _isBookmarkModeActive)
             {
                 Event e = Event.current;
                 if (e.type == EventType.KeyDown)
@@ -462,16 +528,17 @@ namespace DogaShiwakeru
                         _isRenameModeActive = false; 
                         _isNavigateDownModeActive = false;
                         _isDriveSelectModeActive = false;
+                        _isBookmarkModeActive = false;
                         _focusResetQueued = true; 
                         Input.ResetInputAxes(); 
                         e.Use(); 
                     }
-                    else if (e.keyCode == KeyCode.Tab && (_isSaveModeActive || _isNavigateDownModeActive || _isDriveSelectModeActive)) 
+                    else if (e.keyCode == KeyCode.Tab && (_isSaveModeActive || _isNavigateDownModeActive || _isDriveSelectModeActive || _isBookmarkModeActive)) 
                     {
                         if (_modalSuggestions.Count > 0)
                         {
                             _modalSuggestionIndex = (_modalSuggestionIndex + 1) % _modalSuggestions.Count;
-                            if (!_isDriveSelectModeActive) _modalInputString = _modalSuggestions[_modalSuggestionIndex];
+                            if (!_isDriveSelectModeActive && !_isBookmarkModeActive) _modalInputString = _modalSuggestions[_modalSuggestionIndex];
                         }
                         e.Use();
                     }
@@ -481,6 +548,7 @@ namespace DogaShiwakeru
                         else if (_isSaveModeActive) _performSaveQueued = true;
                         else if (_isNavigateDownModeActive) _performNavigateDownQueued = true;
                         else if (_isDriveSelectModeActive) _performDriveSelectQueued = true;
+                        else if (_isBookmarkModeActive) _performBookmarkJumpQueued = true;
                         e.Use(); 
                     }
                 }
@@ -495,10 +563,11 @@ namespace DogaShiwakeru
                 else if (_isSaveModeActive) boxTitle = "Save to Subfolder";
                 else if (_isNavigateDownModeActive) boxTitle = "Navigate to Subfolder";
                 else if (_isDriveSelectModeActive) boxTitle = "Select Drive";
+                else if (_isBookmarkModeActive) boxTitle = "Jump to Bookmark";
 
                 GUI.Box(boxRect, boxTitle);
 
-                if (!_isDriveSelectModeActive)
+                if (!_isDriveSelectModeActive && !_isBookmarkModeActive)
                 {
                     GUI.SetNextControlName("SaveInput");
                     string newText = GUI.TextField(new Rect(boxRect.x + 10, boxRect.y + 30, boxRect.width - 20, 30), _modalInputString, new GUIStyle(GUI.skin.textField) { fontSize = 18 });
@@ -510,11 +579,11 @@ namespace DogaShiwakeru
                     GUI.FocusControl("SaveInput");
                 }
 
-                if ((_isSaveModeActive || _isNavigateDownModeActive || _isDriveSelectModeActive) && _modalSuggestions.Count > 0)
+                if ((_isSaveModeActive || _isNavigateDownModeActive || _isDriveSelectModeActive || _isBookmarkModeActive) && _modalSuggestions.Count > 0)
                 {
                     GUIStyle sStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.MiddleLeft };
                     GUIStyle hStyle = new GUIStyle(sStyle) { normal = { textColor = Color.yellow } };
-                    float startY = _isDriveSelectModeActive ? boxRect.y + 30 : boxRect.y + 70;
+                    float startY = (_isDriveSelectModeActive || _isBookmarkModeActive) ? boxRect.y + 30 : boxRect.y + 70;
                     for (int i = 0; i < _modalSuggestions.Count; i++)
                     {
                         GUI.Label(new Rect(boxRect.x + 10, startY + (i * 25), boxRect.width - 20, 25), _modalSuggestions[i], (i == _modalSuggestionIndex) ? hStyle : sStyle);
