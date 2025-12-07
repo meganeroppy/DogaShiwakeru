@@ -556,7 +556,11 @@ namespace DogaShiwakeru
                 GUI.color = new Color(0, 0, 0, 0.7f);
                 GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
                 GUI.color = Color.white;
-                Rect boxRect = new Rect((Screen.width - 400) / 2, (Screen.height - 300) / 2, 400, 300);
+                
+                // Increased size by 1.5x (400x300 -> 600x450)
+                float boxWidth = 600;
+                float boxHeight = 450;
+                Rect boxRect = new Rect((Screen.width - boxWidth) / 2, (Screen.height - boxHeight) / 2, boxWidth, boxHeight);
                 
                 string boxTitle = "Action";
                 if (_isRenameModeActive) boxTitle = "Rename File";
@@ -584,9 +588,22 @@ namespace DogaShiwakeru
                     GUIStyle sStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.MiddleLeft };
                     GUIStyle hStyle = new GUIStyle(sStyle) { normal = { textColor = Color.yellow } };
                     float startY = (_isDriveSelectModeActive || _isBookmarkModeActive) ? boxRect.y + 30 : boxRect.y + 70;
-                    for (int i = 0; i < _modalSuggestions.Count; i++)
+                    
+                    // Limit the number of items shown if they exceed the box height
+                    int maxItems = Mathf.FloorToInt((boxHeight - (startY - boxRect.y)) / 25) - 1;
+                    int displayStart = 0;
+                    if (_modalSuggestions.Count > maxItems && _modalSuggestionIndex > maxItems / 2)
                     {
-                        GUI.Label(new Rect(boxRect.x + 10, startY + (i * 25), boxRect.width - 20, 25), _modalSuggestions[i], (i == _modalSuggestionIndex) ? hStyle : sStyle);
+                        displayStart = Mathf.Min(_modalSuggestionIndex - (maxItems / 2), _modalSuggestions.Count - maxItems);
+                    }
+                    
+                    for (int i = 0; i < maxItems && (displayStart + i) < _modalSuggestions.Count; i++)
+                    {
+                        int index = displayStart + i;
+                        string rawText = _modalSuggestions[index];
+                        string displayText = TruncateMiddle(rawText, 65); // Truncate if too long
+                        
+                        GUI.Label(new Rect(boxRect.x + 10, startY + (i * 25), boxRect.width - 20, 25), displayText, (index == _modalSuggestionIndex) ? hStyle : sStyle);
                     }
                 }
             }
@@ -631,6 +648,13 @@ namespace DogaShiwakeru
                     GUI.color = Color.white; GUI.Label(new Rect(0, Screen.height - 40, Screen.width, 40), _volumeDisplayText, style);
                 }
             }
+        }
+
+        private string TruncateMiddle(string text, int maxChars)
+        {
+            if (string.IsNullOrEmpty(text) || text.Length <= maxChars) return text;
+            int half = (maxChars - 3) / 2;
+            return text.Substring(0, half) + "..." + text.Substring(text.Length - half);
         }
     }
 }
