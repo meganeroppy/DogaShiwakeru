@@ -119,7 +119,9 @@ namespace DogaShiwakeru
             }
             else
             {
-                newIndex = (newIndex + _currentVideoUIs.Count) % _currentVideoUIs.Count;
+                newIndex = _selectedVideoIndex + direction;
+                if (newIndex < 0) newIndex = _currentVideoUIs.Count - 1;
+                else if (newIndex >= _currentVideoUIs.Count) newIndex = 0;
             }
 
             SelectAndPossiblyFullscreen(newIndex, IsFullscreen());
@@ -183,6 +185,18 @@ namespace DogaShiwakeru
                 videoUI.SetPlaybackSpeed(1.0f); 
             }
             _fullscreenVideoIndex = -1;
+            ReorderGrid();
+        }
+
+        private void ReorderGrid()
+        {
+            for (int i = 0; i < _currentVideoUIs.Count; i++)
+            {
+                if (_currentVideoUIs[i] != null)
+                {
+                    _currentVideoUIs[i].transform.SetSiblingIndex(i);
+                }
+            }
         }
     }
 }
