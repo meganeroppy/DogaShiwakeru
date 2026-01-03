@@ -1,0 +1,28 @@
+Sを押して保存先サブフォルダ指定UIを出した時のログ↓
+[DIAG-UPDATE] KeyDown detected. Focused: null. Save: False, Rename: False, NavDown: False
+UnityEngine.Debug:Log (object)
+DogaShiwakeru.MainController:Update () (at Assets/Scripts/MainController.cs:137)
+
+[DIAG] S key processed.
+UnityEngine.Debug:Log (object)
+DogaShiwakeru.MainController:HandleNormalInput () (at Assets/Scripts/MainController.cs:166)
+DogaShiwakeru.MainController:Update () (at Assets/Scripts/MainController.cs:146)
+
+
+ESPを押して保存先サブフォルダ指定UIを閉じた時のログ↓
+[DIAG-ONGUI] Escape key pressed. Exiting modal.
+UnityEngine.Debug:Log (object)
+DogaShiwakeru.MainController:OnGUI () (at Assets/Scripts/MainController.cs:425)
+
+Sを押し再び保存先サブフォルダ指定UIを出そうとしたが、何もでず、ログも何もでない
+
+再びSを押して保存先サブフォルダ指定UIを出した時のログ↓
+[DIAG-UPDATE] KeyDown detected. Focused: null. Save: False, Rename: False, NavDown: False
+UnityEngine.Debug:Log (object)
+DogaShiwakeru.MainController:Update () (at Assets/Scripts/MainController.cs:137)
+
+[DIAG] S key processed.
+UnityEngine.Debug:Log (object)
+DogaShiwakeru.MainController:HandleNormalInput () (at Assets/Scripts/MainController.cs:166)
+DogaShiwakeru.MainController:Update () (at Assets/Scripts/MainController.cs:146)
+

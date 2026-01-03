@@ -26,7 +26,13 @@ namespace DogaShiwakeru
         private string _volumeDisplayText = "";
         private float _volumeDisplayTimer = 0f;
         private const float VOLUME_DISPLAY_DURATION = 2.0f;
+
         private string _videoCountText = "";
+
+        private float _currentPlaybackSpeed = 1.0f;
+        private string _speedDisplayText = "";
+        private float _speedDisplayTimer = 0f;
+        private const float SPEED_DISPLAY_DURATION = 2.0f;
 
         private bool _isSaveModeActive = false;
         private bool _isRenameModeActive = false;
@@ -48,7 +54,13 @@ namespace DogaShiwakeru
 
         private const string LAST_VIDEO_DIRECTORY_KEY = "LastVideoDirectory";
         private const string VOLUME_KEY = "LastVolumeLevel";
+        private const string PLAYBACK_SPEED_KEY = "LastPlaybackSpeed";
         private const string BOOKMARKS_KEY = "AppBookmarks";
+
+        // Key Repeat Settings
+        private float _keyRepeatTimer = 0f;
+        private const float KEY_REPEAT_DELAY = 0.4f;
+        private const float KEY_REPEAT_RATE = 0.05f; // Very fast repeat for "ガーって" effect
         
         // --- Methods ---
 
@@ -57,6 +69,12 @@ namespace DogaShiwakeru
             _videoLoader = new VideoLoader();
             _videoFileManager = new VideoFileManager();
             _currentVolume = PlayerPrefs.GetFloat(VOLUME_KEY, 1.0f);
+            
+            // Load and apply saved playback speed
+            _currentPlaybackSpeed = PlayerPrefs.GetFloat(PLAYBACK_SPEED_KEY, 1.0f);
+            // Show speed on startup
+            _speedDisplayText = $"Speed: x{_currentPlaybackSpeed:0.00}";
+            _speedDisplayTimer = SPEED_DISPLAY_DURATION;
 
             if (videoGridManager != null) videoGridManager.canvasRectTransform = canvasRectTransform;
             else Debug.LogError("VideoGridManager not assigned.");
@@ -113,6 +131,7 @@ namespace DogaShiwakeru
             
             var videosToDisplay = _allVideoPaths.Take(MAX_VIDEOS_ON_SCREEN).ToList();
             videoGridManager.DisplayVideos(videosToDisplay);
+            videoGridManager.SetSelectionPlaybackSpeed(_currentPlaybackSpeed); // Apply global speed to new grid
             ApplyGlobalVolume();
             
             if (videosToDisplay.Any())
@@ -160,13 +179,71 @@ namespace DogaShiwakeru
             {
                 var selectedVideo = videoGridManager.GetVideoUI(currentSelectedIndex);
                 _fullscreenDisplayFileName = selectedVideo != null ? Path.GetFileName(selectedVideo.GetVideoPath()) : "";
+                
+                // Show speed when selection changes
+                _speedDisplayText = $"Speed: x{_currentPlaybackSpeed:0.00}";
+                _speedDisplayTimer = SPEED_DISPLAY_DURATION;
+                
                 _lastSelectedIndex = currentSelectedIndex;
             }
 
+
+
             if (_volumeDisplayTimer > 0) _volumeDisplayTimer -= Time.deltaTime;
+            if (_speedDisplayTimer > 0) _speedDisplayTimer -= Time.deltaTime;
 
             bool isFullscreen = videoGridManager.IsFullscreen(); 
             VideoPlayerUI currentVideo = videoGridManager.GetSelectedVideoUI();
+
+            // Speed Control with Repeat Logic
+            float speedChange = 0f;
+            bool speedChanged = false;
+
+            // W key (Reset) - No repeat needed
+            if (Input.GetKeyDown(KeyCode.W))
+            {
+                _currentPlaybackSpeed = 1.0f;
+                speedChanged = true;
+            }
+            // Q/E keys (Decrease/Increase) - With repeat
+            else if (Input.GetKey(KeyCode.Q) || Input.GetKey(KeyCode.E))
+            {
+                if (Input.GetKeyDown(KeyCode.Q) || Input.GetKeyDown(KeyCode.E))
+                {
+                    // First press
+                    _keyRepeatTimer = KEY_REPEAT_DELAY;
+                    speedChange = Input.GetKey(KeyCode.Q) ? -0.25f : 0.25f;
+                }
+                else
+                {
+                    // Holding down
+                    _keyRepeatTimer -= Time.deltaTime;
+                    if (_keyRepeatTimer <= 0)
+                    {
+                        _keyRepeatTimer = KEY_REPEAT_RATE;
+                        speedChange = Input.GetKey(KeyCode.Q) ? -0.25f : 0.25f;
+                    }
+                }
+            }
+
+            if (speedChange != 0 || speedChanged)
+            {
+                if (speedChange != 0)
+                {
+                    _currentPlaybackSpeed += speedChange;
+                    _currentPlaybackSpeed = Mathf.Clamp(_currentPlaybackSpeed, 0.25f, 10.0f);
+                }
+
+                Debug.Log($"[MainController] New Speed: {_currentPlaybackSpeed}");
+                videoGridManager.SetSelectionPlaybackSpeed(_currentPlaybackSpeed);
+                
+                // Save settings
+                PlayerPrefs.SetFloat(PLAYBACK_SPEED_KEY, _currentPlaybackSpeed);
+                PlayerPrefs.Save();
+
+                _speedDisplayText = $"Speed: x{_currentPlaybackSpeed:0.00}";
+                _speedDisplayTimer = SPEED_DISPLAY_DURATION;
+            }
 
             if (Input.GetKeyDown(KeyCode.S))
             {
@@ -655,6 +732,15 @@ namespace DogaShiwakeru
                     style.alignment = TextAnchor.LowerCenter; style.fontSize = 24; style.wordWrap = false; 
                     GUI.color = Color.black; GUI.Label(new Rect(0, Screen.height - 41, Screen.width, 40), _volumeDisplayText, style);
                     GUI.color = Color.white; GUI.Label(new Rect(0, Screen.height - 40, Screen.width, 40), _volumeDisplayText, style);
+                }
+
+                if (_speedDisplayTimer > 0)
+                {
+                    style.alignment = TextAnchor.LowerCenter; style.fontSize = 24; style.wordWrap = false;
+                    // Display above volume text
+                    float yPos = (_volumeDisplayTimer > 0) ? Screen.height - 80 : Screen.height - 40;
+                    GUI.color = Color.black; GUI.Label(new Rect(0, yPos - 1, Screen.width, 40), _speedDisplayText, style);
+                    GUI.color = Color.white; GUI.Label(new Rect(0, yPos, Screen.width, 40), _speedDisplayText, style);
                 }
             }
         }

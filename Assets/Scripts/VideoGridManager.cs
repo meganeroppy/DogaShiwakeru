@@ -12,6 +12,7 @@ namespace DogaShiwakeru
         private List<VideoPlayerUI> _currentVideoUIs = new List<VideoPlayerUI>();
         private int _selectedVideoIndex = -1;
         private int _fullscreenVideoIndex = -1;
+        private float _currentSelectionSpeed = 1.0f;
 
         // The MainController now controls how many are activated initially
         // private const int VISIBLE_BUFFER_COUNT = 20; 
@@ -88,7 +89,22 @@ namespace DogaShiwakeru
             {
                 newSelectedUI.SetSelected(true);
                 newSelectedUI.SetMute(false);
-                newSelectedUI.SetPlaybackSpeed(1.0f); // Selected video always plays full speed
+                newSelectedUI.SetPlaybackSpeed(_currentSelectionSpeed); // Selected video follows current speed setting
+            }
+        }
+
+        public void SetSelectionPlaybackSpeed(float speed)
+        {
+            Debug.Log($"[VideoGridManager] SetSelectionPlaybackSpeed: {speed}");
+            _currentSelectionSpeed = speed;
+            var selectedUI = GetSelectedVideoUI();
+            if (selectedUI != null)
+            {
+                selectedUI.SetPlaybackSpeed(_currentSelectionSpeed);
+            }
+            else
+            {
+                Debug.LogWarning("[VideoGridManager] No selected video UI to set speed on.");
             }
         }
 
@@ -168,7 +184,7 @@ namespace DogaShiwakeru
             if (videoUI != null && !videoUI.IsFullscreen())
             {
                 videoUI.Activate(); // Ensure video is activated before going fullscreen
-                videoUI.SetPlaybackSpeed(1.0f); // Always full speed in fullscreen
+                videoUI.SetPlaybackSpeed(_currentSelectionSpeed); // Always current speed in fullscreen
                 videoUI.ToggleFullscreen(canvasRectTransform);
                 _fullscreenVideoIndex = index;
             }
@@ -181,8 +197,8 @@ namespace DogaShiwakeru
             if (videoUI != null && videoUI.IsFullscreen())
             {
                 videoUI.ToggleFullscreen(canvasRectTransform);
-                // After exiting fullscreen, the video is still the selected one, so it should play at full speed.
-                videoUI.SetPlaybackSpeed(1.0f); 
+                // After exiting fullscreen, the video is still the selected one, so it should play at current selected speed.
+                videoUI.SetPlaybackSpeed(_currentSelectionSpeed); 
             }
             _fullscreenVideoIndex = -1;
             ReorderGrid();

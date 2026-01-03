@@ -316,6 +316,10 @@ namespace DogaShiwakeru
                     videoPlayer.isLooping = true;
 
                     videoPlayer.renderMode = VideoRenderMode.RenderTexture;
+                    
+                    // Audio settings for high quality playback
+                    videoPlayer.audioOutputMode = VideoAudioOutputMode.Direct;
+                    videoPlayer.controlledAudioTrackCount = 1;
 
         
 
@@ -516,6 +520,7 @@ namespace DogaShiwakeru
         }
         public void SetPlaybackSpeed(float speed)
         {
+            Debug.Log($"[VideoPlayerUI] SetPlaybackSpeed: {speed} (Previously: {_targetPlaybackSpeed})");
             if (!_isActivated) Activate();
             _targetPlaybackSpeed = speed;
             videoPlayer.playbackSpeed = speed;
