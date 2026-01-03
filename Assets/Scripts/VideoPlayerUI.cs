@@ -593,9 +593,16 @@ namespace DogaShiwakeru
             {
                 videoPlayer.prepareCompleted -= OnPrepareCompleted;
                 videoPlayer.loopPointReached -= OnVideoEnd;
+                
+                // Explicitly stop to ensure native threads are cleaned up
+                videoPlayer.Stop();
+
                 if (videoPlayer.targetTexture != null)
                 {
-                    videoPlayer.targetTexture.Release();
+                    var tex = videoPlayer.targetTexture;
+                    videoPlayer.targetTexture = null; // Unlink before releasing
+                    tex.Release();
+                    Destroy(tex); // Ensure the object is destroyed
                 }
             }
         }
