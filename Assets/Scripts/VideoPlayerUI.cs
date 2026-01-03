@@ -321,6 +321,9 @@ namespace DogaShiwakeru
                     videoPlayer.audioOutputMode = VideoAudioOutputMode.Direct;
                     videoPlayer.controlledAudioTrackCount = 1;
 
+                    // Allow frame skipping to maintain playback speed, especially at high speeds (e.g. 10x)
+                    videoPlayer.skipOnDrop = true;
+
         
 
                     videoPlayer.prepareCompleted += OnPrepareCompleted;
