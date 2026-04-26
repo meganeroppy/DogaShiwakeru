@@ -13,6 +13,7 @@ namespace DogaShiwakeru
         private int _selectedVideoIndex = -1;
         private int _fullscreenVideoIndex = -1;
         private float _currentSelectionSpeed = 1.0f;
+        private Coroutine _prepareCoroutine;
 
         // The MainController now controls how many are activated initially
         // private const int VISIBLE_BUFFER_COUNT = 20; 
@@ -42,7 +43,8 @@ namespace DogaShiwakeru
             }
             
             // Start staggered prepare to avoid simultaneous decode overload
-            StartCoroutine(StaggeredPrepareCoroutine());
+            if (_prepareCoroutine != null) StopCoroutine(_prepareCoroutine);
+            _prepareCoroutine = StartCoroutine(StaggeredPrepareCoroutine());
         }
 
         // Prepare videos one at a time to prevent FPS drop from simultaneous decode
@@ -67,8 +69,11 @@ namespace DogaShiwakeru
                     yield return new UnityEngine.WaitForSeconds(0.3f);
                 }
 
-                ui.Activate();
-                activeCount++;
+                if (ui != null)
+                {
+                    ui.Activate();
+                    activeCount++;
+                }
 
                 // Small delay between each activation to spread the load
                 yield return new UnityEngine.WaitForSeconds(0.1f);
@@ -77,9 +82,15 @@ namespace DogaShiwakeru
 
         private void ClearVideos()
         {
+            if (_prepareCoroutine != null)
+            {
+                StopCoroutine(_prepareCoroutine);
+                _prepareCoroutine = null;
+            }
+
             foreach (VideoPlayerUI videoUI in _currentVideoUIs)
             {
-                Destroy(videoUI.gameObject);
+                if (videoUI != null) Destroy(videoUI.gameObject);
             }
             _currentVideoUIs.Clear();
             _selectedVideoIndex = -1;
@@ -95,7 +106,7 @@ namespace DogaShiwakeru
         public VideoPlayerUI GetSelectedVideoUI() => GetVideoUI(_selectedVideoIndex);
         public int GetSelectedVideoIndex() => _selectedVideoIndex;
 
-        public void SetSelectedVideo(int index)
+        public void SetSelectedVideo(int index, bool shouldPlay = true)
         {
             if (_selectedVideoIndex == index) return;
 
@@ -120,7 +131,7 @@ namespace DogaShiwakeru
                 newSelectedUI.SetSelected(true);
                 newSelectedUI.SetMute(false);
                 newSelectedUI.SetPlaybackSpeed(_currentSelectionSpeed);
-                newSelectedUI.RestorePlayMode(); // Full FPS, full quality
+                newSelectedUI.RestorePlayMode(shouldPlay); // Full FPS, full quality
             }
         }
 
@@ -139,7 +150,7 @@ namespace DogaShiwakeru
             }
         }
 
-        public void SelectAndPossiblyFullscreen(int index, bool makeFullscreen)
+        public void SelectAndPossiblyFullscreen(int index, bool makeFullscreen, bool shouldPlay = true)
         {
             // If currently in fullscreen and moving to a new selection, exit old fullscreen first.
             if (IsFullscreen() && _fullscreenVideoIndex != index)
@@ -147,7 +158,7 @@ namespace DogaShiwakeru
                 ExitFullscreen();
             }
 
-            SetSelectedVideo(index);
+            SetSelectedVideo(index, shouldPlay);
 
             if (makeFullscreen && _selectedVideoIndex != -1)
             {
@@ -158,6 +169,13 @@ namespace DogaShiwakeru
         public void MoveSelection(int direction)
         {
             if (_currentVideoUIs.Count == 0) return;
+
+            bool wasPlaying = false;
+            var currentUI = GetSelectedVideoUI();
+            if (currentUI != null)
+            {
+                wasPlaying = currentUI.IsPlaying;
+            }
 
             int newIndex = _selectedVideoIndex + direction;
             if (_selectedVideoIndex == -1)
@@ -171,7 +189,7 @@ namespace DogaShiwakeru
                 else if (newIndex >= _currentVideoUIs.Count) newIndex = 0;
             }
 
-            SelectAndPossiblyFullscreen(newIndex, IsFullscreen());
+            SelectAndPossiblyFullscreen(newIndex, IsFullscreen(), wasPlaying);
         }
 
         public void DeselectOrExitFullscreen()

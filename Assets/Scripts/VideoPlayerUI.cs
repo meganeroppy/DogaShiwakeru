@@ -99,7 +99,7 @@ namespace DogaShiwakeru
 
         public void Activate()
         {
-            if (_isActivated) return;
+            if (_isActivated || mediaPlayer == null) return;
             _isActivated = true;
             _prepareStartTime = Time.realtimeSinceStartupAsDouble;
             
@@ -184,7 +184,8 @@ namespace DogaShiwakeru
                     break;
 
                 case MediaPlayerEvent.EventType.FirstFrameReady:
-                    if (!_autoPlay) mp.Control.Pause();
+                    if (_autoPlay) mp.Control.Play();
+                    else mp.Control.Pause();
                     break;
 
                 case MediaPlayerEvent.EventType.Error:
@@ -213,15 +214,16 @@ namespace DogaShiwakeru
             if (mediaPlayer.Control != null) mediaPlayer.Control.Pause();
         }
 
-        public void RestorePlayMode()
+        public void RestorePlayMode(bool shouldPlay)
         {
-            _autoPlay = true;
-            if (mediaPlayer.Control != null && mediaPlayer.Control.CanPlay())
+            _autoPlay = shouldPlay;
+            if (mediaPlayer != null && mediaPlayer.Control != null && mediaPlayer.Control.CanPlay())
             {
                 mediaPlayer.AudioMuted = _isMuted;
                 mediaPlayer.AudioVolume = _volume;
                 mediaPlayer.PlaybackRate = _targetPlaybackSpeed;
-                mediaPlayer.Play();
+                if (shouldPlay) mediaPlayer.Play();
+                else mediaPlayer.Pause();
             }
             else
             {
