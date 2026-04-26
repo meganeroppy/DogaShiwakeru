@@ -31,17 +31,47 @@ namespace DogaShiwakeru
                 return;
             }
 
-            // Instantiate all videos provided by MainController (which is already limited to MAX_VIDEOS_ON_SCREEN)
+            // Instantiate all videos provided by MainController
             for (int i = 0; i < videoPaths.Count; i++)
             {
                 VideoPlayerUI videoUI = Instantiate(videoPlayerUIPrefab, gridParent);
-                videoUI.Init(videoPaths[i]); // Init path for all
-                
-                videoUI.Activate(); // Activate (prepare) all displayed videos
-                videoUI.SetPlaybackSpeed(0.25f); // Set to 0.25f for all non-selected displayed thumbnails
-                
+                videoUI.Init(videoPaths[i]);
+                videoUI.SetAutoPlay(false);
                 videoUI.SetMute(true);
                 _currentVideoUIs.Add(videoUI);
+            }
+            
+            // Start staggered prepare to avoid simultaneous decode overload
+            StartCoroutine(StaggeredPrepareCoroutine());
+        }
+
+        // Prepare videos one at a time to prevent FPS drop from simultaneous decode
+        private System.Collections.IEnumerator StaggeredPrepareCoroutine()
+        {
+            const int MAX_SIMULTANEOUS = 2;
+            int activeCount = 0;
+
+            for (int i = 0; i < _currentVideoUIs.Count; i++)
+            {
+                var ui = _currentVideoUIs[i];
+                if (ui == null) continue;
+
+                // Wait until active concurrent prepares are below the limit
+                while (activeCount >= MAX_SIMULTANEOUS)
+                {
+                    activeCount = 0;
+                    foreach (var v in _currentVideoUIs)
+                    {
+                        if (v != null && v.IsPreparingOrPlaying()) activeCount++;
+                    }
+                    yield return new UnityEngine.WaitForSeconds(0.3f);
+                }
+
+                ui.Activate();
+                activeCount++;
+
+                // Small delay between each activation to spread the load
+                yield return new UnityEngine.WaitForSeconds(0.1f);
             }
         }
 
@@ -69,7 +99,7 @@ namespace DogaShiwakeru
         {
             if (_selectedVideoIndex == index) return;
 
-            // Deselect old
+            // Deselect old: switch to low-FPS thumbnail mode
             if (_selectedVideoIndex != -1)
             {
                 var oldSelectedUI = GetVideoUI(_selectedVideoIndex);
@@ -77,19 +107,20 @@ namespace DogaShiwakeru
                 {
                     oldSelectedUI.SetSelected(false);
                     oldSelectedUI.SetMute(true);
-                    oldSelectedUI.SetPlaybackSpeed(0.25f); // Set to 0.25f when deselected
+                    oldSelectedUI.SetThumbnailMode(); // Drop to ~0.4fps
                 }
             }
 
             _selectedVideoIndex = index;
 
-            // Select new
+            // Select new: restore full-quality playback
             var newSelectedUI = GetVideoUI(_selectedVideoIndex);
             if (newSelectedUI != null)
             {
                 newSelectedUI.SetSelected(true);
                 newSelectedUI.SetMute(false);
-                newSelectedUI.SetPlaybackSpeed(_currentSelectionSpeed); // Selected video follows current speed setting
+                newSelectedUI.SetPlaybackSpeed(_currentSelectionSpeed);
+                newSelectedUI.RestorePlayMode(); // Full FPS, full quality
             }
         }
 

@@ -62,10 +62,16 @@ namespace DogaShiwakeru
         private const float KEY_REPEAT_DELAY = 0.4f;
         private const float KEY_REPEAT_RATE = 0.05f; // Very fast repeat for "ガーって" effect
         
+        private ThumbnailGenerator _thumbnailGenerator;
+        
         // --- Methods ---
 
         void Start()
         {
+            // Set high target frame rate for smooth video playback
+            Application.targetFrameRate = 60;
+            QualitySettings.vSyncCount = 1; // Sync with monitor refresh rate to prevent tearing and stutter
+
             _videoLoader = new VideoLoader();
             _videoFileManager = new VideoFileManager();
             _currentVolume = PlayerPrefs.GetFloat(VOLUME_KEY, 1.0f);
@@ -89,6 +95,8 @@ namespace DogaShiwakeru
                 OpenDirectoryDialog();
             }
             LoadBookmarks();
+            
+            _thumbnailGenerator = gameObject.AddComponent<ThumbnailGenerator>();
         }
 
         private void OpenDirectoryDialog()
@@ -149,9 +157,26 @@ namespace DogaShiwakeru
             _videoCountText = $"Total Videos: {count}";
         }
         
+        private float _fpsTimer = 0f;
+        private int _frameCount = 0;
+
         void Update()
         {
             if (videoGridManager == null) return;
+
+            // Diagnostic: Monitor Main Thread FPS
+            _frameCount++;
+            _fpsTimer += Time.unscaledDeltaTime;
+            if (_fpsTimer >= 1.0f)
+            {
+                float fps = _frameCount / _fpsTimer;
+                if (fps < 30f)
+                {
+                    Debug.LogWarning($"[MainController] Low FPS detected: {fps:F1} FPS. Possible main thread bottleneck.");
+                }
+                _frameCount = 0;
+                _fpsTimer = 0;
+            }
 
             if (_focusResetQueued)
             {
@@ -296,13 +321,13 @@ namespace DogaShiwakeru
             {
                 if (currentVideo != null)
                 {
-                    if (currentVideo.videoPlayer.isPlaying) { currentVideo.Pause(); }
+                    if (currentVideo.IsPlaying) { currentVideo.Pause(); }
                     else { currentVideo.Play(); }
                 }
             }
             else if (Input.GetKeyDown(KeyCode.Backspace))
             {
-                if (currentVideo != null) currentVideo.videoPlayer.time = 0;
+                if (currentVideo != null) currentVideo.SeekToPercent(0);
             }
             else if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.RightArrow))
             {
@@ -447,9 +472,14 @@ namespace DogaShiwakeru
                         _modalSuggestions.Add(d.Name);
                     }
                 }
-                if (_modalSuggestions.Count > 0) _modalSuggestionIndex = 0;
             }
             catch(System.Exception e) { Debug.LogError($"Error getting drives: {e.Message}"); }
+            
+            if (_modalSuggestions.Count > 0) 
+            {
+                _modalSuggestionIndex = 0;
+                UpdateThumbnailPreview();
+            }
         }
 
         private void UpdateSubdirectorySuggestions()
@@ -473,7 +503,12 @@ namespace DogaShiwakeru
                 }
             }
             catch(System.Exception e) { Debug.LogError($"Error getting subdirectories: {e.Message}"); }
-            if (_modalSuggestions.Count > 0) _modalSuggestionIndex = 0;
+            
+            if (_modalSuggestions.Count > 0) 
+            {
+               _modalSuggestionIndex = 0;
+               UpdateThumbnailPreview();
+            }
         }
 
         private void PerformSaveAction()
@@ -625,6 +660,8 @@ namespace DogaShiwakeru
                             }
                             
                             if (!_isDriveSelectModeActive && !_isBookmarkModeActive) _modalInputString = _modalSuggestions[_modalSuggestionIndex];
+                            
+                            UpdateThumbnailPreview();
                         }
                         e.Use();
                     }
@@ -692,6 +729,26 @@ namespace DogaShiwakeru
                         GUI.Label(new Rect(boxRect.x + 10, startY + (i * 25), boxRect.width - 20, 25), displayText, (index == _modalSuggestionIndex) ? hStyle : sStyle);
                     }
                 }
+                
+                // Draw Thumbnails
+                if (_thumbnailGenerator != null && _thumbnailGenerator.GeneratedThumbnails.Count > 0)
+                {
+                     float thumbScale = 0.8f; 
+                     float thumbW = 256 * thumbScale;
+                     float thumbH = 144 * thumbScale;
+                     float padding = 10;
+                     float totalWidth = _thumbnailGenerator.GeneratedThumbnails.Count * (thumbW + padding) - padding;
+                     float startX = (Screen.width - totalWidth) / 2;
+                     float startY = boxRect.yMax + 20;
+                     
+                     for(int i=0; i < _thumbnailGenerator.GeneratedThumbnails.Count; i++)
+                     {
+                         if (_thumbnailGenerator.GeneratedThumbnails[i] != null)
+                         {
+                             GUI.DrawTexture(new Rect(startX + i * (thumbW + padding), startY, thumbW, thumbH), _thumbnailGenerator.GeneratedThumbnails[i]);
+                         }
+                     }
+                }
             }
             else
             {
@@ -750,6 +807,28 @@ namespace DogaShiwakeru
             if (string.IsNullOrEmpty(text) || text.Length <= maxChars) return text;
             int half = (maxChars - 3) / 2;
             return text.Substring(0, half) + "..." + text.Substring(text.Length - half);
+        }
+        
+        private void UpdateThumbnailPreview()
+        {
+             if (_modalSuggestions.Count > 0 && _modalSuggestionIndex >= 0 && _modalSuggestionIndex < _modalSuggestions.Count)
+             {
+                  // Differentiate between Drive selection (which are full paths or drive letters) and Subdirectories (names only)
+                  string path = "";
+                  if (_isDriveSelectModeActive || _isBookmarkModeActive)
+                  {
+                      path = _modalSuggestions[_modalSuggestionIndex];
+                  }
+                  else
+                  {
+                      path = Path.Combine(_currentVideoDirectory, _modalSuggestions[_modalSuggestionIndex]);
+                  }
+                  
+                  if (Directory.Exists(path))
+                  {
+                      _thumbnailGenerator.UpdateThumbnails(path);
+                  }
+             }
         }
     }
 }

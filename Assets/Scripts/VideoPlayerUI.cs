@@ -5,7 +5,8 @@ using System.IO;
 using System;
 using TMPro;
 using UnityEngine.EventSystems;
-using System.Collections; // Added for IEnumerator and WaitForSeconds
+using System.Collections;
+using RenderHeads.Media.AVProVideo;
 
 namespace DogaShiwakeru
 {
@@ -13,9 +14,9 @@ namespace DogaShiwakeru
     {
         [Header("Component References")]
         public RawImage videoDisplay;
-        public VideoPlayer videoPlayer;
+        public MediaPlayer mediaPlayer;
         public GameObject selectionHighlight;
-        public RectTransform videoDisplayRectTransform; // The child object with the RawImage
+        public RectTransform videoDisplayRectTransform;
         
         [Header("UI Elements")]
         public Slider progressSlider;
@@ -23,588 +24,292 @@ namespace DogaShiwakeru
         
         private AspectRatioFitter _aspectRatioFitter;
         private string _totalTimeFormatted;
-
-        private const int THUMBNAIL_HEIGHT = 256;
-
         private string _videoPath;
         private bool _isMuted = true;
         private float _volume = 1.0f;
-        private bool _isFullScreen = false;
         private bool _isActivated = false;
         private float _targetPlaybackSpeed = 1.0f;
+        private bool _autoPlay = false;
+        private float _uiUpdateTimer = 0f;
+        private double _prepareStartTime;
 
-        // Store original transform state
+        private bool _isFullScreen = false;
+        public bool IsFullscreen() => _isFullScreen;
+
         private Vector3 _originalLocalScale;
         private Vector3 _originalLocalPosition;
         private Transform _originalParent;
         private int _originalSiblingIndex;
 
-                void Awake()
-
-                {
-
-                    if (videoPlayer == null) videoPlayer = GetComponent<VideoPlayer>();
-
-        
-
-                    if (videoDisplay != null)
-
-                    {
-
-                        _aspectRatioFitter = videoDisplay.GetComponent<AspectRatioFitter>();
-
-                    }
-
-        
-
-                                                        if (timeDisplayText != null)
-
-        
-
-                                                        {
-
-        
-
-                                                            timeDisplayText.enableAutoSizing = false;
-
-        
-
-                                                            timeDisplayText.fontSize = 20;
-
-        
-
-                                            
-
-        
-
-                                                                            var rectTransform = timeDisplayText.rectTransform;
-
-        
-
-                                            
-
-        
-
-                                                                            if (rectTransform != null)
-
-        
-
-                                            
-
-        
-
-                                                                            {
-
-        
-
-                                            
-
-        
-
-                                                                                // Anchor to the bottom-right corner
-
-        
-
-                                            
-
-        
-
-                                                                                rectTransform.anchorMin = new Vector2(1, 0);
-
-        
-
-                                            
-
-        
-
-                                                                                rectTransform.anchorMax = new Vector2(1, 0);
-
-        
-
-                                            
-
-        
-
-                                                                                rectTransform.pivot = new Vector2(1, 0);
-
-        
-
-                                            
-
-        
-
-                                                                                
-
-        
-
-                                            
-
-        
-
-                                                                                                    // Add some padding from the corner
-
-        
-
-                                            
-
-        
-
-                                                                                
-
-        
-
-                                            
-
-        
-
-                                                                                                    rectTransform.anchoredPosition = new Vector2(-10, 20);
-
-        
-
-                                            
-
-        
-
-                                                                                
-
-        
-
-                                            
-
-        
-
-                                                                                                    
-
-        
-
-                                            
-
-        
-
-                                                                                
-
-        
-
-                                            
-
-        
-
-                                                                                                    // Ensure enough space for the text and prevent wrapping
-
-        
-
-                                            
-
-        
-
-                                                                                rectTransform.sizeDelta = new Vector2(150, 30); // Width 150, Height 30
-
-        
-
-                                            
-
-        
-
-                                                                            }
-
-        
-
-                                            
-
-        
-
-                                                                            
-
-        
-
-                                            
-
-        
-
-                                                                                                            // Align the text to the right
-
-        
-
-                                            
-
-        
-
-                                                                            
-
-        
-
-                                            
-
-        
-
-                                                                                                            timeDisplayText.alignment = TMPro.TextAlignmentOptions.BottomRight;
-
-        
-
-                                            
-
-        
-
-                                                                            
-
-        
-
-                                            
-
-        
-
-                                                                                                            timeDisplayText.enableWordWrapping = false; // Prevent vertical wrapping
-
-        
-
-                                            
-
-        
-
-                                                                            
-
-        
-
-                                            
-
-        
-
-                                                                                                        }
-
-        
-
-                                            
-
-        
-
-                                                                            
-
-        
-
-                                            
-
-        
-
-                                                                                            
-
-        
-
-                                            
-
-        
-
-                                                                            
-
-        
-
-                                            
-
-        
-
-                                                                                                        _originalLocalScale = transform.localScale;
-
-                    _originalLocalPosition = transform.localPosition;
-
-                    _originalParent = transform.parent;
-
-                    _originalSiblingIndex = transform.GetSiblingIndex();
-
-        
-
-                    videoPlayer.playOnAwake = false;
-
-                    videoPlayer.isLooping = true;
-
-                    videoPlayer.renderMode = VideoRenderMode.RenderTexture;
-                    
-                    // Audio settings for high quality playback
-                    videoPlayer.audioOutputMode = VideoAudioOutputMode.Direct;
-                    videoPlayer.controlledAudioTrackCount = 1;
-
-                    // Allow frame skipping to maintain playback speed, especially at high speeds (e.g. 10x)
-                    videoPlayer.skipOnDrop = true;
-
-        
-
-                    videoPlayer.prepareCompleted += OnPrepareCompleted;
-
-                    videoPlayer.loopPointReached += OnVideoEnd;
-
-        
-
-                    if (progressSlider != null)
-
-                    {
-
-                        progressSlider.onValueChanged.AddListener(OnSliderValueChanged);
-
-                    }
-
-        
-
-                    UpdateProgressUI(false);
-
-                    SetSelected(false);
-
-                }
+        public bool IsPlaying => mediaPlayer != null && mediaPlayer.Control != null && mediaPlayer.Control.IsPlaying();
+
+        void Awake()
+        {
+            if (mediaPlayer == null) mediaPlayer = GetComponent<MediaPlayer>();
+            if (mediaPlayer == null) mediaPlayer = gameObject.AddComponent<MediaPlayer>();
+            
+            // Silence "No MediaReference" errors by disabling auto-open
+            mediaPlayer.AutoOpen = false;
+
+            if (videoDisplay != null)
+            {
+                _aspectRatioFitter = videoDisplay.GetComponent<AspectRatioFitter>();
+            }
+
+            mediaPlayer.Events.AddListener(OnMediaPlayerEvent);
+            
+            _originalLocalScale = transform.localScale;
+            _originalLocalPosition = transform.localPosition;
+            _originalParent = transform.parent;
+            _originalSiblingIndex = transform.GetSiblingIndex();
+
+            if (timeDisplayText != null)
+            {
+                timeDisplayText.enableAutoSizing = false;
+                timeDisplayText.fontSize = 20;
+                timeDisplayText.alignment = TextAlignmentOptions.BottomRight;
+            }
+
+            if (progressSlider != null)
+            {
+                progressSlider.onValueChanged.AddListener(OnSliderValueChanged);
+            }
+
+            SetSelected(false);
+            UpdateProgressUI(false);
+        }
+
+        private void OnDestroy()
+        {
+            if (mediaPlayer != null)
+            {
+                mediaPlayer.Events.RemoveListener(OnMediaPlayerEvent);
+                mediaPlayer.CloseMedia();
+            }
+        }
 
         public void Init(string path)
         {
             _videoPath = path;
             _isActivated = false;
-            _totalTimeFormatted = "00:00.0"; // Reset
-            _targetPlaybackSpeed = 1.0f; // Reset speed target
-            videoDisplay.texture = null;
-            if (videoPlayer.targetTexture != null)
-            {
-                videoPlayer.targetTexture.Release();
-                videoPlayer.targetTexture = null;
-            }
-            videoPlayer.Stop();
-            videoPlayer.url = null;
+            _totalTimeFormatted = "00:00";
+            if (videoDisplay != null) videoDisplay.texture = null;
+            if (mediaPlayer != null) mediaPlayer.CloseMedia();
         }
 
         public void Activate()
         {
             if (_isActivated) return;
             _isActivated = true;
+            _prepareStartTime = Time.realtimeSinceStartupAsDouble;
             
-            // A temporary small texture is fine, it will be recreated OnPrepareCompleted
-            if (videoPlayer.targetTexture == null)
-            {
-                 videoPlayer.targetTexture = new RenderTexture(THUMBNAIL_HEIGHT, THUMBNAIL_HEIGHT, 0);
-                 videoDisplay.texture = videoPlayer.targetTexture;
-            }
-            
-            videoPlayer.url = "file://" + _videoPath;
-            videoPlayer.Prepare();
+            // AVPro v3: OpenMedia
+            mediaPlayer.OpenMedia(new MediaPath(_videoPath, MediaPathType.AbsolutePathOrURL), _autoPlay);
+        }
+
+        public void Deactivate()
+        {
+            if (!_isActivated) return;
+            _isActivated = false;
+            mediaPlayer.CloseMedia();
+            if (videoDisplay != null) videoDisplay.texture = null;
+        }
+
+        public bool IsPreparingOrPlaying()
+        {
+            return _isActivated && mediaPlayer.Control != null && (mediaPlayer.Control.IsPlaying() || mediaPlayer.Control.IsPaused());
         }
 
         void Update()
         {
-            if (videoPlayer.isPlaying && videoPlayer.length > 0)
+            if (mediaPlayer == null || mediaPlayer.Control == null) return;
+
+            if (mediaPlayer.TextureProducer != null)
             {
-                if (progressSlider != null)
+                Texture tex = mediaPlayer.TextureProducer.GetTexture();
+                if (tex != null && (videoDisplay.texture != tex || _uiUpdateTimer >= 0.5f)) // Periodic check for flip
                 {
-                    progressSlider.value = (float)(videoPlayer.time / videoPlayer.length);
+                    videoDisplay.texture = tex;
+                    UpdateAspectRatio(tex.width, tex.height);
+
+                    // Fix upside down issue
+                    if (mediaPlayer.TextureProducer.RequiresVerticalFlip())
+                    {
+                        videoDisplay.uvRect = new Rect(0f, 1f, 1f, -1f); // Flip Y
+                    }
+                    else
+                    {
+                        videoDisplay.uvRect = new Rect(0f, 0f, 1f, 1f); // Normal
+                    }
                 }
-                if (timeDisplayText != null)
+            }
+
+            if (mediaPlayer.Control.IsPlaying() || _isActivated)
+            {
+                _uiUpdateTimer += Time.deltaTime;
+                if (_uiUpdateTimer >= 0.1f)
                 {
-                    string currentTime = FormatTime(videoPlayer.time);
-                    timeDisplayText.text = $"{currentTime} / {_totalTimeFormatted}";
+                    _uiUpdateTimer = 0;
+                    UpdateUI();
                 }
             }
         }
-        
+
+        private void UpdateUI()
+        {
+            if (mediaPlayer.Control == null || mediaPlayer.Info == null) return;
+
+            double time = mediaPlayer.Control.GetCurrentTime();
+            double duration = mediaPlayer.Info.GetDuration();
+
+            if (duration > 0)
+            {
+                if (progressSlider != null) progressSlider.value = (float)(time / duration);
+                if (timeDisplayText != null) timeDisplayText.text = $"{FormatTime(time)} / {_totalTimeFormatted}";
+            }
+        }
+
         public void OnSliderValueChanged(float value)
         {
-            if (videoPlayer.isPrepared) { videoPlayer.time = videoPlayer.length * value; }
-        }
-        
-        private void UpdateProgressUI(bool isVisible)
-        {
-            if (progressSlider != null) progressSlider.gameObject.SetActive(isVisible);
-            if (timeDisplayText != null) timeDisplayText.gameObject.SetActive(isVisible);
+            // Optional: implement manual scrubbing logic here
         }
 
-        private void OnPrepareCompleted(VideoPlayer source)
+        private void OnMediaPlayerEvent(MediaPlayer mp, MediaPlayerEvent.EventType et, ErrorCode errorCode)
         {
-            UpdateRenderTexture();
-            _totalTimeFormatted = FormatTime(source.length);
-
-            // Setup Audio
-            for (ushort i = 0; i < source.audioTrackCount; i++)
+            switch (et)
             {
-                source.SetDirectAudioMute(i, _isMuted);
-                source.SetDirectAudioVolume(i, _volume);
+                case MediaPlayerEvent.EventType.MetaDataReady:
+                    _totalTimeFormatted = FormatTime(mp.Info.GetDuration());
+                    UpdateAspectRatio(mp.Info.GetVideoWidth(), mp.Info.GetVideoHeight());
+                    break;
+
+                case MediaPlayerEvent.EventType.FirstFrameReady:
+                    if (!_autoPlay) mp.Control.Pause();
+                    break;
+
+                case MediaPlayerEvent.EventType.Error:
+                    Debug.LogError($"[VideoPlayerUI] AVPro Error: {errorCode} on {Path.GetFileName(_videoPath)}");
+                    break;
             }
-            source.playbackSpeed = _targetPlaybackSpeed; // Enforce playback speed
-            source.Play();
+        }
+
+        private void UpdateAspectRatio(int width, int height)
+        {
+            if (_aspectRatioFitter != null && height > 0)
+            {
+                _aspectRatioFitter.aspectRatio = (float)width / height;
+            }
         }
 
         private string FormatTime(double seconds)
         {
             TimeSpan time = TimeSpan.FromSeconds(seconds);
-            return string.Format("{0:00}:{1:00}.{2}", (int)time.TotalMinutes, time.Seconds, time.Milliseconds / 100);
+            return string.Format("{0:00}:{1:00}", (int)time.TotalMinutes, time.Seconds);
         }
-        
-        private void UpdateRenderTexture()
+
+        public void SetThumbnailMode()
         {
-            float videoAspectRatio = 1.777f; // Default 16:9
-            if (videoPlayer.texture != null && videoPlayer.texture.height > 0)
-            {
-                videoAspectRatio = (float)videoPlayer.texture.width / (float)videoPlayer.texture.height;
-            }
-            // if (videoPlayer.texture == null || videoPlayer.texture.height == 0) return; // Removed early exit
+            _autoPlay = false;
+            if (mediaPlayer.Control != null) mediaPlayer.Control.Pause();
+        }
 
-            int width, height;
-
-            if (_isFullScreen)
+        public void RestorePlayMode()
+        {
+            _autoPlay = true;
+            if (mediaPlayer.Control != null && mediaPlayer.Control.CanPlay())
             {
-                // Calculate dimensions to fit the screen while maintaining aspect ratio
-                float screenRatio = (float)Screen.width / Screen.height;
-                if (videoAspectRatio > screenRatio)
-                {
-                    // Video is wider than screen, fit to width
-                    width = Screen.width;
-                    height = Mathf.RoundToInt(width / videoAspectRatio);
-                }
-                else
-                {
-                    // Video is taller than screen, fit to height
-                    height = Screen.height;
-                    width = Mathf.RoundToInt(height * videoAspectRatio);
-                }
+                mediaPlayer.AudioMuted = _isMuted;
+                mediaPlayer.AudioVolume = _volume;
+                mediaPlayer.PlaybackRate = _targetPlaybackSpeed;
+                mediaPlayer.Play();
             }
             else
             {
-                height = THUMBNAIL_HEIGHT;
-                width = Mathf.RoundToInt(height * videoAspectRatio);
-            }
-
-            if (videoPlayer.targetTexture != null)
-            {
-                // Optimization: Only release and recreate if dimensions changed
-                if (videoPlayer.targetTexture.width == width && videoPlayer.targetTexture.height == height) return;
-                
-                videoPlayer.targetTexture.Release();
-            }
-            
-            videoPlayer.targetTexture = new RenderTexture(width, height, 0);
-            videoDisplay.texture = videoPlayer.targetTexture;
-            
-            // Ensure AspectRatioFitter is updated
-            if (_aspectRatioFitter != null)
-            {
-                _aspectRatioFitter.aspectRatio = videoAspectRatio;
+                Activate();
             }
         }
 
         public string GetVideoPath() => _videoPath;
-        public void Pause() => videoPlayer.Pause();
-        public void Play() => videoPlayer.Play();
+        public void Pause() => mediaPlayer.Control.Pause();
+        public void Play()
+        {
+            if (mediaPlayer.Control != null) mediaPlayer.Control.Play();
+            else Activate();
+        }
+
         public void Seek(float seconds)
         {
-            if (videoPlayer.isPrepared)
-            {
-                double newTime = videoPlayer.time + seconds;
-                newTime = Math.Max(0, Math.Min(videoPlayer.length, newTime));
-                videoPlayer.time = newTime;
-            }
+            if (mediaPlayer.Control != null)
+                mediaPlayer.Control.Seek(mediaPlayer.Control.GetCurrentTime() + seconds);
         }
 
         public void SeekToPercent(float percent)
         {
-            if (videoPlayer.isPrepared && videoPlayer.length > 0)
-            {
-                float clampedPercent = Mathf.Clamp01(percent);
-                videoPlayer.time = videoPlayer.length * clampedPercent;
-            }
+            if (mediaPlayer.Control != null && mediaPlayer.Info.GetDuration() > 0)
+                mediaPlayer.Control.Seek(mediaPlayer.Info.GetDuration() * Mathf.Clamp01(percent));
         }
 
         public void ToggleMute() => SetMute(!_isMuted);
         public void SetVolume(float volume)
         {
             _volume = Mathf.Clamp01(volume);
-            if (!videoPlayer.isPrepared) return;
-            for (ushort i = 0; i < videoPlayer.audioTrackCount; i++)
-            {
-                videoPlayer.SetDirectAudioVolume(i, _volume);
-            }
+            if (mediaPlayer != null) mediaPlayer.AudioVolume = _volume;
         }
+
         public void SetMute(bool mute)
         {
             _isMuted = mute;
-            if (!videoPlayer.isPrepared) return;
-            for (ushort i = 0; i < videoPlayer.audioTrackCount; i++)
-            {
-                videoPlayer.SetDirectAudioMute(i, _isMuted);
-            }
+            if (mediaPlayer != null) mediaPlayer.AudioMuted = mute;
         }
+
         public void SetPlaybackSpeed(float speed)
         {
-            Debug.Log($"[VideoPlayerUI] SetPlaybackSpeed: {speed} (Previously: {_targetPlaybackSpeed})");
-            if (!_isActivated) Activate();
             _targetPlaybackSpeed = speed;
-            videoPlayer.playbackSpeed = speed;
+            if (mediaPlayer != null) mediaPlayer.PlaybackRate = speed;
         }
+
+        public void SetAutoPlay(bool autoPlay) => _autoPlay = autoPlay;
         public void SetSelected(bool isSelected)
         {
             if (selectionHighlight != null) selectionHighlight.SetActive(isSelected);
-            UpdateProgressUI(_isFullScreen);
+            UpdateProgressUI(_isFullScreen || isSelected);
         }
-        public bool IsFullscreen() => _isFullScreen;
-        public bool ToggleFullscreen(RectTransform canvasRectTransform)
+
+        private void UpdateProgressUI(bool isVisible)
         {
-            _isFullScreen = !_isFullScreen;
-            
-            UpdateProgressUI(_isFullScreen); 
-            if (selectionHighlight != null) selectionHighlight.SetActive(!_isFullScreen);
+            if (progressSlider != null) progressSlider.gameObject.SetActive(isVisible);
+            if (timeDisplayText != null) timeDisplayText.gameObject.SetActive(isVisible);
+        }
 
-            var rootRectTransform = (RectTransform)transform;
+        public void ToggleFullscreen(RectTransform canvasRect) => SetFullscreen(!_isFullScreen, canvasRect);
 
-            if (_isFullScreen)
+        public void SetFullscreen(bool fullscreen, RectTransform canvasRect)
+        {
+            if (_isFullScreen == fullscreen) return;
+            _isFullScreen = fullscreen;
+
+            if (_isFullScreen && canvasRect != null)
             {
-                // We no longer touch the AspectRatioFitter. We just re-parent and stretch.
-                // The fitter on the child RawImage will continue to work within its new, larger parent.
-                
-                if (_originalParent == null)
-                {
-                    _originalParent = transform.parent;
-                    _originalSiblingIndex = transform.GetSiblingIndex();
-                    _originalLocalScale = transform.localScale;
-                    _originalLocalPosition = transform.localPosition;
-                }
-
-                transform.SetParent(canvasRectTransform, true);
-                transform.SetAsLastSibling();
-
-                rootRectTransform.anchorMin = Vector2.zero;
-                rootRectTransform.anchorMax = Vector2.one;
-                rootRectTransform.sizeDelta = Vector2.zero;
-                rootRectTransform.anchoredPosition = Vector2.zero;
-                rootRectTransform.localScale = Vector3.one;
-                
-                rootRectTransform.localScale = Vector3.one;
-                
-                // Update texture for full screen resolution with correct aspect ratio
-                UpdateRenderTexture();
+                if (selectionHighlight != null) selectionHighlight.SetActive(false); // Hide highlight in fullscreen
+                transform.SetParent(canvasRect, true);
+                RectTransform rect = GetComponent<RectTransform>();
+                rect.anchorMin = Vector2.zero;
+                rect.anchorMax = Vector2.one;
+                rect.offsetMin = Vector2.zero;
+                rect.offsetMax = Vector2.zero;
+                rect.localScale = Vector3.one;
             }
             else
             {
-                // No need to touch the AspectRatioFitter here either.
-
                 transform.SetParent(_originalParent, true);
                 transform.SetSiblingIndex(_originalSiblingIndex);
                 transform.localScale = _originalLocalScale;
                 transform.localPosition = _originalLocalPosition;
-
-                // Recreate RenderTexture for thumbnail resolution
-                UpdateRenderTexture();
+                RectTransform rect = GetComponent<RectTransform>();
+                rect.anchorMin = new Vector2(0.5f, 0.5f);
+                rect.anchorMax = new Vector2(0.5f, 0.5f);
             }
-            return _isFullScreen;
-        }
-
-        private void OnVideoEnd(VideoPlayer vp) { }
-
-        void OnDestroy()
-        {
-            if (videoPlayer != null)
-            {
-                videoPlayer.prepareCompleted -= OnPrepareCompleted;
-                videoPlayer.loopPointReached -= OnVideoEnd;
-                
-                // Explicitly stop to ensure native threads are cleaned up
-                videoPlayer.Stop();
-
-                if (videoPlayer.targetTexture != null)
-                {
-                    var tex = videoPlayer.targetTexture;
-                    videoPlayer.targetTexture = null; // Unlink before releasing
-                    tex.Release();
-                    Destroy(tex); // Ensure the object is destroyed
-                }
-            }
+            UpdateProgressUI(_isFullScreen);
         }
     }
 }
