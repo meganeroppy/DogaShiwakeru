@@ -206,6 +206,10 @@ namespace DogaShiwakeru
 
                 case MediaPlayerEvent.EventType.FirstFrameReady:
                     _isLoading = false;
+                    // OpenMedia 後に AVPro がオーディオ設定をリセットする場合があるため
+                    // Play() 前に必ずミュート・ボリュームを再適用する
+                    mp.AudioMuted = _isMuted;
+                    mp.AudioVolume = _volume;
                     // 常に Play() してテクスチャを確実に描画させる。
                     // autoPlay でない場合は Update() でテクスチャ取得後に Pause() する。
                     mp.Control.Play();
