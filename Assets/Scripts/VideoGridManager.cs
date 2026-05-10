@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using System.Linq;
 
 namespace DogaShiwakeru
 {
@@ -25,25 +26,100 @@ namespace DogaShiwakeru
 
         public void DisplayVideos(List<string> videoPaths)
         {
-            ClearVideos();
-            if (videoPaths == null || videoPaths.Count == 0)
+            if (videoPaths == null) videoPaths = new List<string>();
+
+            // 進行中のロードコルーチンを停止
+            if (_prepareCoroutine != null)
+            {
+                StopCoroutine(_prepareCoroutine);
+                _prepareCoroutine = null;
+            }
+
+            // フルスクリーン中なら先に解除
+            if (IsFullscreen()) ExitFullscreen();
+
+            // 現在選択中（再生中）の動画パスを記憶
+            // DisplayVideos 後に RefreshGridDisplay が即座に再選択するため、その間の停止を防ぐ
+            string currentSelectedPath = null;
+            if (_selectedVideoIndex >= 0 && _selectedVideoIndex < _currentVideoUIs.Count)
+            {
+                var sel = _currentVideoUIs[_selectedVideoIndex];
+                if (sel != null) currentSelectedPath = sel.GetVideoPath();
+            }
+
+            // 現在表示中の GO をパスで索引
+            var existingByPath = new Dictionary<string, VideoPlayerUI>();
+            foreach (var ui in _currentVideoUIs)
+            {
+                if (ui == null) continue;
+                string p = ui.GetVideoPath();
+                if (!string.IsNullOrEmpty(p) && !existingByPath.ContainsKey(p))
+                    existingByPath[p] = ui;
+            }
+
+            // 新しいリストを構築（既存 GO を再利用 or 新規 Instantiate）
+            var newUIs = new List<VideoPlayerUI>();
+            var reusedPaths = new HashSet<string>();
+
+            for (int i = 0; i < videoPaths.Count; i++)
+            {
+                string path = videoPaths[i];
+
+                if (existingByPath.TryGetValue(path, out VideoPlayerUI existing))
+                {
+                    // 同じパスの GO を再利用 ― Instantiate/Destroy なし
+                    reusedPaths.Add(path);
+
+                    if (path == currentSelectedPath)
+                    {
+                        // 選択中（再生中）の動画はそのまま継続させる。
+                        // 直後の SelectAndPossiblyFullscreen がハイライト等を正しく復元する。
+                    }
+                    else
+                    {
+                        existing.SetSelected(false);
+                        existing.SetMute(true);
+                        existing.SetAutoPlay(false);
+                        // 再生中だった場合のみ停止（キャッシュ表示中は不要）
+                        if (existing.IsActivated() && !existing.HasCachedThumbnail())
+                            existing.SetThumbnailMode();
+                    }
+                    newUIs.Add(existing);
+                }
+                else
+                {
+                    // 新規パス ― GO を作成
+                    VideoPlayerUI newUI = Instantiate(videoPlayerUIPrefab, gridParent);
+                    newUI.Init(path);
+                    newUI.SetAutoPlay(false);
+                    newUI.SetMute(true);
+                    if (ThumbnailCache.TryGet(path, out Texture2D cachedTex))
+                        newUI.SetCachedThumbnail(cachedTex);
+                    newUIs.Add(newUI);
+                }
+            }
+
+            // 不要になった既存 GO を破棄
+            foreach (var kvp in existingByPath)
+            {
+                if (!reusedPaths.Contains(kvp.Key) && kvp.Value != null)
+                    Destroy(kvp.Value.gameObject);
+            }
+
+            _currentVideoUIs = newUIs;
+            _selectedVideoIndex = -1;
+            _fullscreenVideoIndex = -1;
+
+            // グリッド上の描画順を更新
+            ReorderGrid();
+
+            if (_currentVideoUIs.Count == 0)
             {
                 Debug.Log("No video files to display in grid.");
                 return;
             }
 
-            // Instantiate all videos provided by MainController
-            for (int i = 0; i < videoPaths.Count; i++)
-            {
-                VideoPlayerUI videoUI = Instantiate(videoPlayerUIPrefab, gridParent);
-                videoUI.Init(videoPaths[i]);
-                videoUI.SetAutoPlay(false);
-                videoUI.SetMute(true);
-                _currentVideoUIs.Add(videoUI);
-            }
-            
-            // Start staggered prepare to avoid simultaneous decode overload
-            if (_prepareCoroutine != null) StopCoroutine(_prepareCoroutine);
+            // キャッシュ未取得・未アクティブな動画だけをスタッガードロード
             _prepareCoroutine = StartCoroutine(StaggeredPrepareCoroutine());
         }
 
@@ -57,8 +133,10 @@ namespace DogaShiwakeru
                 var ui = _currentVideoUIs[i];
                 if (ui == null) continue;
 
+                // キャッシュ表示中、またはすでにアクティブ（再利用 GO）はスキップ
+                if (ui.HasCachedThumbnail() || ui.IsActivated()) continue;
+
                 // ロード中（FirstFrameReady 未着）の動画数が上限以下になるまで待つ
-                // IsLoading() は Activate() でセット、FirstFrameReady またはエラーでクリアされる
                 int loadingCount;
                 do
                 {

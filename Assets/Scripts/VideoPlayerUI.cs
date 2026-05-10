@@ -35,6 +35,9 @@ namespace DogaShiwakeru
 
         private bool _isLoading = false;
         private bool _pendingPause = false;
+        private bool _usingCachedThumbnail = false;
+        private bool _pendingThumbnailCapture = false;
+        private bool _isSelected = false;
 
         private bool _isFullScreen = false;
         public bool IsFullscreen() => _isFullScreen;
@@ -97,17 +100,35 @@ namespace DogaShiwakeru
             _isActivated = false;
             _isLoading = false;
             _pendingPause = false;
+            _usingCachedThumbnail = false;
+            _pendingThumbnailCapture = false;
             _totalTimeFormatted = "00:00";
             if (videoDisplay != null) videoDisplay.texture = null;
             if (mediaPlayer != null) mediaPlayer.CloseMedia();
         }
 
+        /// <summary>キャッシュ済みサムネイルを直接表示する（AVPro ロード不要）。</summary>
+        public void SetCachedThumbnail(Texture2D tex)
+        {
+            _usingCachedThumbnail = true;
+            if (videoDisplay != null && tex != null)
+            {
+                videoDisplay.texture = tex;
+                videoDisplay.uvRect = new Rect(0f, 0f, 1f, 1f); // キャプチャ時に正規化済み
+                UpdateAspectRatio(tex.width, tex.height);
+            }
+        }
+
+        public bool HasCachedThumbnail() => _usingCachedThumbnail;
+
         public void Activate()
         {
             if (_isActivated || mediaPlayer == null) return;
+            _usingCachedThumbnail = false; // AVPro で開く際はキャッシュモードを解除
             _isActivated = true;
             _isLoading = true;
             _pendingPause = false;
+            _pendingThumbnailCapture = false;
             _prepareStartTime = Time.realtimeSinceStartupAsDouble;
 
             // AVPro v3: OpenMedia
@@ -120,11 +141,14 @@ namespace DogaShiwakeru
             _isActivated = false;
             _isLoading = false;
             _pendingPause = false;
+            _usingCachedThumbnail = false;
+            _pendingThumbnailCapture = false;
             mediaPlayer.CloseMedia();
             if (videoDisplay != null) videoDisplay.texture = null;
         }
 
         public bool IsLoading() => _isLoading;
+        public bool IsActivated() => _isActivated;
 
         public bool IsPreparingOrPlaying()
         {
@@ -147,13 +171,21 @@ namespace DogaShiwakeru
                     UpdateAspectRatio(tex.width, tex.height);
 
                     // Fix upside down issue
-                    if (mediaPlayer.TextureProducer.RequiresVerticalFlip())
+                    bool requiresFlip = mediaPlayer.TextureProducer.RequiresVerticalFlip();
+                    if (requiresFlip)
                     {
                         videoDisplay.uvRect = new Rect(0f, 1f, 1f, -1f); // Flip Y
                     }
                     else
                     {
                         videoDisplay.uvRect = new Rect(0f, 0f, 1f, 1f); // Normal
+                    }
+
+                    // 初回フレーム取得時にサムネイルをキャプチャしてキャッシュ
+                    if (_pendingThumbnailCapture)
+                    {
+                        _pendingThumbnailCapture = false;
+                        CaptureAndCacheThumbnail(tex, requiresFlip);
                     }
 
                     // サムネイル取得後に一時停止（非再生モードの初回フレーム表示用）
@@ -206,12 +238,12 @@ namespace DogaShiwakeru
 
                 case MediaPlayerEvent.EventType.FirstFrameReady:
                     _isLoading = false;
-                    // OpenMedia 後に AVPro がオーディオ設定をリセットする場合があるため
-                    // Play() 前に必ずミュート・ボリュームを再適用する
+                    _pendingThumbnailCapture = true; // Update() で初回フレームをキャプチャ
+                    // OpenMedia 後に AVPro がオーディオ設定をリセットする場合があるため再適用
                     mp.AudioMuted = _isMuted;
                     mp.AudioVolume = _volume;
-                    // 常に Play() してテクスチャを確実に描画させる。
-                    // autoPlay でない場合は Update() でテクスチャ取得後に Pause() する。
+                    // テクスチャを確実に描画させるため常に Play()。
+                    // autoPlay でない場合は Update() でテクスチャ取得後に Pause()。
                     mp.Control.Play();
                     if (!_autoPlay)
                     {
@@ -222,6 +254,7 @@ namespace DogaShiwakeru
                 case MediaPlayerEvent.EventType.Error:
                     _isLoading = false;
                     _pendingPause = false;
+                    _pendingThumbnailCapture = false;
                     Debug.LogError($"[VideoPlayerUI] AVPro Error: {errorCode} on {Path.GetFileName(_videoPath)}");
                     break;
             }
@@ -233,6 +266,42 @@ namespace DogaShiwakeru
             {
                 _aspectRatioFitter.aspectRatio = (float)width / height;
             }
+        }
+
+        /// <summary>
+        /// AVPro テクスチャを Texture2D としてキャプチャし ThumbnailCache に保存する。
+        /// 縦フリップが必要な場合は Blit 時に補正してから保存するため、
+        /// キャッシュから復元した際は uvRect を通常（0,0,1,1）のまま使える。
+        /// </summary>
+        private void CaptureAndCacheThumbnail(Texture sourceTex, bool requiresFlip)
+        {
+            if (string.IsNullOrEmpty(_videoPath) || ThumbnailCache.HasEntry(_videoPath)) return;
+
+            // 長辺を 256px に収めてアスペクト比を維持
+            const int MAX_DIM = 256;
+            float scale = (float)MAX_DIM / Mathf.Max(sourceTex.width, sourceTex.height);
+            int w = Mathf.Max(1, Mathf.RoundToInt(sourceTex.width * scale));
+            int h = Mathf.Max(1, Mathf.RoundToInt(sourceTex.height * scale));
+
+            RenderTexture rt = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.Default);
+
+            if (requiresFlip)
+                // 縦フリップを Blit 時に解消してから保存
+                Graphics.Blit(sourceTex, rt, new Vector2(1f, -1f), new Vector2(0f, 1f));
+            else
+                Graphics.Blit(sourceTex, rt);
+
+            RenderTexture prev = RenderTexture.active;
+            RenderTexture.active = rt;
+
+            Texture2D tex2d = new Texture2D(w, h, TextureFormat.RGB24, false);
+            tex2d.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+            tex2d.Apply();
+
+            RenderTexture.active = prev;
+            RenderTexture.ReleaseTemporary(rt);
+
+            ThumbnailCache.Store(_videoPath, tex2d);
         }
 
         private string FormatTime(double seconds)
@@ -250,7 +319,15 @@ namespace DogaShiwakeru
         public void RestorePlayMode(bool shouldPlay)
         {
             _autoPlay = shouldPlay;
-            _pendingPause = false; // 再生モード復帰時はペンディング一時停止をキャンセル
+            _pendingPause = false;
+
+            // キャッシュサムネイル表示中だった場合は AVPro で改めて開く
+            if (_usingCachedThumbnail)
+            {
+                _usingCachedThumbnail = false;
+                _isActivated = false; // Activate() を通るようにリセット
+            }
+
             if (mediaPlayer != null && mediaPlayer.Control != null && mediaPlayer.Control.CanPlay())
             {
                 mediaPlayer.AudioMuted = _isMuted;
@@ -307,6 +384,7 @@ namespace DogaShiwakeru
         public void SetAutoPlay(bool autoPlay) => _autoPlay = autoPlay;
         public void SetSelected(bool isSelected)
         {
+            _isSelected = isSelected;
             if (selectionHighlight != null) selectionHighlight.SetActive(isSelected);
             UpdateProgressUI(_isFullScreen || isSelected);
         }
@@ -326,7 +404,8 @@ namespace DogaShiwakeru
 
             if (_isFullScreen && canvasRect != null)
             {
-                if (selectionHighlight != null) selectionHighlight.SetActive(false); // Hide highlight in fullscreen
+                // フルスクリーン入場時はハイライトを非表示
+                if (selectionHighlight != null) selectionHighlight.SetActive(false);
                 transform.SetParent(canvasRect, true);
                 RectTransform rect = GetComponent<RectTransform>();
                 rect.anchorMin = Vector2.zero;
@@ -344,8 +423,10 @@ namespace DogaShiwakeru
                 RectTransform rect = GetComponent<RectTransform>();
                 rect.anchorMin = new Vector2(0.5f, 0.5f);
                 rect.anchorMax = new Vector2(0.5f, 0.5f);
+                // フルスクリーン解除時は選択状態に応じてハイライトを復元
+                if (selectionHighlight != null) selectionHighlight.SetActive(_isSelected);
             }
-            UpdateProgressUI(_isFullScreen);
+            UpdateProgressUI(_isFullScreen || _isSelected);
         }
     }
 }

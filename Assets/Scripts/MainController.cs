@@ -403,6 +403,7 @@ namespace DogaShiwakeru
                     // Permanently delete
                     if (_videoFileManager.DeleteVideoFile(sourcePath))
                     {
+                        ThumbnailCache.Remove(sourcePath); // キャッシュから除去
                         _allVideoPaths.Remove(sourcePath);
                         RefreshGridDisplay(videoGridManager.GetSelectedVideoIndex(), isFullscreen);
                         _lastSelectedIndex = -1;
@@ -451,6 +452,7 @@ namespace DogaShiwakeru
                 string sourcePath = selectedVideo.GetVideoPath();
                 if (_videoFileManager.MoveVideoFile(sourcePath, destFolderPath))
                 {
+                    ThumbnailCache.Remove(sourcePath); // 移動元のキャッシュを除去
                     _allVideoPaths.Remove(sourcePath);
                     RefreshGridDisplay(currentIndexOnScreen, wasFullscreen);
                     _lastSelectedIndex = -1;
