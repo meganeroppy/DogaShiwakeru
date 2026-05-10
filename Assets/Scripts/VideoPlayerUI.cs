@@ -313,7 +313,10 @@ namespace DogaShiwakeru
         public void SetThumbnailMode()
         {
             _autoPlay = false;
-            if (mediaPlayer.Control != null) mediaPlayer.Control.Pause();
+            // Pause() は呼ばない。
+            // 一度も選択されていない動画は _pendingPause で最初のフレームで停止済み。
+            // 選択→非選択になった動画はミュート状態でそのまま再生継続させる（ライブサムネイル）。
+            // ミュートは呼び出し元 SetSelectedVideo() の SetMute(true) が担う。
         }
 
         public void RestorePlayMode(bool shouldPlay)
