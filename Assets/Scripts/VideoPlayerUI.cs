@@ -33,6 +33,9 @@ namespace DogaShiwakeru
         private float _uiUpdateTimer = 0f;
         private double _prepareStartTime;
 
+        private bool _isLoading = false;
+        private bool _pendingPause = false;
+
         private bool _isFullScreen = false;
         public bool IsFullscreen() => _isFullScreen;
 
@@ -92,6 +95,8 @@ namespace DogaShiwakeru
         {
             _videoPath = path;
             _isActivated = false;
+            _isLoading = false;
+            _pendingPause = false;
             _totalTimeFormatted = "00:00";
             if (videoDisplay != null) videoDisplay.texture = null;
             if (mediaPlayer != null) mediaPlayer.CloseMedia();
@@ -101,8 +106,10 @@ namespace DogaShiwakeru
         {
             if (_isActivated || mediaPlayer == null) return;
             _isActivated = true;
+            _isLoading = true;
+            _pendingPause = false;
             _prepareStartTime = Time.realtimeSinceStartupAsDouble;
-            
+
             // AVPro v3: OpenMedia
             mediaPlayer.OpenMedia(new MediaPath(_videoPath, MediaPathType.AbsolutePathOrURL), _autoPlay);
         }
@@ -111,13 +118,20 @@ namespace DogaShiwakeru
         {
             if (!_isActivated) return;
             _isActivated = false;
+            _isLoading = false;
+            _pendingPause = false;
             mediaPlayer.CloseMedia();
             if (videoDisplay != null) videoDisplay.texture = null;
         }
 
+        public bool IsLoading() => _isLoading;
+
         public bool IsPreparingOrPlaying()
         {
-            return _isActivated && mediaPlayer.Control != null && (mediaPlayer.Control.IsPlaying() || mediaPlayer.Control.IsPaused());
+            if (!_isActivated) return false;
+            if (_isLoading) return true;
+            if (mediaPlayer.Control == null) return true;
+            return mediaPlayer.Control.IsPlaying() || mediaPlayer.Control.IsPaused();
         }
 
         void Update()
@@ -140,6 +154,13 @@ namespace DogaShiwakeru
                     else
                     {
                         videoDisplay.uvRect = new Rect(0f, 0f, 1f, 1f); // Normal
+                    }
+
+                    // サムネイル取得後に一時停止（非再生モードの初回フレーム表示用）
+                    if (_pendingPause)
+                    {
+                        _pendingPause = false;
+                        if (mediaPlayer.Control != null) mediaPlayer.Control.Pause();
                     }
                 }
             }
@@ -184,11 +205,19 @@ namespace DogaShiwakeru
                     break;
 
                 case MediaPlayerEvent.EventType.FirstFrameReady:
-                    if (_autoPlay) mp.Control.Play();
-                    else mp.Control.Pause();
+                    _isLoading = false;
+                    // 常に Play() してテクスチャを確実に描画させる。
+                    // autoPlay でない場合は Update() でテクスチャ取得後に Pause() する。
+                    mp.Control.Play();
+                    if (!_autoPlay)
+                    {
+                        _pendingPause = true;
+                    }
                     break;
 
                 case MediaPlayerEvent.EventType.Error:
+                    _isLoading = false;
+                    _pendingPause = false;
                     Debug.LogError($"[VideoPlayerUI] AVPro Error: {errorCode} on {Path.GetFileName(_videoPath)}");
                     break;
             }
@@ -217,6 +246,7 @@ namespace DogaShiwakeru
         public void RestorePlayMode(bool shouldPlay)
         {
             _autoPlay = shouldPlay;
+            _pendingPause = false; // 再生モード復帰時はペンディング一時停止をキャンセル
             if (mediaPlayer != null && mediaPlayer.Control != null && mediaPlayer.Control.CanPlay())
             {
                 mediaPlayer.AudioMuted = _isMuted;

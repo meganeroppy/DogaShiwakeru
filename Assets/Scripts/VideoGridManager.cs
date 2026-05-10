@@ -51,28 +51,29 @@ namespace DogaShiwakeru
         private System.Collections.IEnumerator StaggeredPrepareCoroutine()
         {
             const int MAX_SIMULTANEOUS = 2;
-            int activeCount = 0;
 
             for (int i = 0; i < _currentVideoUIs.Count; i++)
             {
                 var ui = _currentVideoUIs[i];
                 if (ui == null) continue;
 
-                // Wait until active concurrent prepares are below the limit
-                while (activeCount >= MAX_SIMULTANEOUS)
+                // ロード中（FirstFrameReady 未着）の動画数が上限以下になるまで待つ
+                // IsLoading() は Activate() でセット、FirstFrameReady またはエラーでクリアされる
+                int loadingCount;
+                do
                 {
-                    activeCount = 0;
+                    loadingCount = 0;
                     foreach (var v in _currentVideoUIs)
                     {
-                        if (v != null && v.IsPreparingOrPlaying()) activeCount++;
+                        if (v != null && v.IsLoading()) loadingCount++;
                     }
-                    yield return new UnityEngine.WaitForSeconds(0.3f);
-                }
+                    if (loadingCount >= MAX_SIMULTANEOUS)
+                        yield return new UnityEngine.WaitForSeconds(0.3f);
+                } while (loadingCount >= MAX_SIMULTANEOUS);
 
                 if (ui != null)
                 {
                     ui.Activate();
-                    activeCount++;
                 }
 
                 // Small delay between each activation to spread the load
