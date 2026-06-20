@@ -1,10 +1,8 @@
 using UnityEngine;
 using UnityEngine.UI;
-using UnityEngine.Video;
 using System.IO;
 using System;
 using TMPro;
-using UnityEngine.EventSystems;
 using System.Collections;
 using RenderHeads.Media.AVProVideo;
 
@@ -17,11 +15,14 @@ namespace DogaShiwakeru
         public MediaPlayer mediaPlayer;
         public GameObject selectionHighlight;
         public RectTransform videoDisplayRectTransform;
-        
+
         [Header("UI Elements")]
         public Slider progressSlider;
         public TextMeshProUGUI timeDisplayText;
-        
+
+        // 非選択動画のサムネイル更新間隔（秒）。この間隔で1フレームだけシークする
+        private const float THUMBNAIL_SEEK_INTERVAL = 2.0f;
+
         private AspectRatioFitter _aspectRatioFitter;
         private string _totalTimeFormatted;
         private string _videoPath;
@@ -39,6 +40,11 @@ namespace DogaShiwakeru
         private bool _pendingThumbnailCapture = false;
         private bool _isSelected = false;
 
+        // サムネイルモード（非選択）状態管理
+        private bool _isThumbnailMode = false;
+        private float _thumbnailSeekTimer = 0f;
+        private bool _textureNeedsUpdate = false; // シーク後にテクスチャ更新が必要
+
         private bool _isFullScreen = false;
         public bool IsFullscreen() => _isFullScreen;
 
@@ -53,17 +59,14 @@ namespace DogaShiwakeru
         {
             if (mediaPlayer == null) mediaPlayer = GetComponent<MediaPlayer>();
             if (mediaPlayer == null) mediaPlayer = gameObject.AddComponent<MediaPlayer>();
-            
-            // Silence "No MediaReference" errors by disabling auto-open
+
             mediaPlayer.AutoOpen = false;
 
             if (videoDisplay != null)
-            {
                 _aspectRatioFitter = videoDisplay.GetComponent<AspectRatioFitter>();
-            }
 
             mediaPlayer.Events.AddListener(OnMediaPlayerEvent);
-            
+
             _originalLocalScale = transform.localScale;
             _originalLocalPosition = transform.localPosition;
             _originalParent = transform.parent;
@@ -77,9 +80,7 @@ namespace DogaShiwakeru
             }
 
             if (progressSlider != null)
-            {
                 progressSlider.onValueChanged.AddListener(OnSliderValueChanged);
-            }
 
             SetSelected(false);
             UpdateProgressUI(false);
@@ -102,19 +103,20 @@ namespace DogaShiwakeru
             _pendingPause = false;
             _usingCachedThumbnail = false;
             _pendingThumbnailCapture = false;
+            _isThumbnailMode = false;
+            _textureNeedsUpdate = false;
             _totalTimeFormatted = "00:00";
             if (videoDisplay != null) videoDisplay.texture = null;
             if (mediaPlayer != null) mediaPlayer.CloseMedia();
         }
 
-        /// <summary>キャッシュ済みサムネイルを直接表示する（AVPro ロード不要）。</summary>
         public void SetCachedThumbnail(Texture2D tex)
         {
             _usingCachedThumbnail = true;
             if (videoDisplay != null && tex != null)
             {
                 videoDisplay.texture = tex;
-                videoDisplay.uvRect = new Rect(0f, 0f, 1f, 1f); // キャプチャ時に正規化済み
+                videoDisplay.uvRect = new Rect(0f, 0f, 1f, 1f);
                 UpdateAspectRatio(tex.width, tex.height);
             }
         }
@@ -124,14 +126,14 @@ namespace DogaShiwakeru
         public void Activate()
         {
             if (_isActivated || mediaPlayer == null) return;
-            _usingCachedThumbnail = false; // AVPro で開く際はキャッシュモードを解除
+            _usingCachedThumbnail = false;
             _isActivated = true;
             _isLoading = true;
             _pendingPause = false;
             _pendingThumbnailCapture = false;
+            _isThumbnailMode = false;
+            _textureNeedsUpdate = false;
             _prepareStartTime = Time.realtimeSinceStartupAsDouble;
-
-            // AVPro v3: OpenMedia
             mediaPlayer.OpenMedia(new MediaPath(_videoPath, MediaPathType.AbsolutePathOrURL), _autoPlay);
         }
 
@@ -143,6 +145,8 @@ namespace DogaShiwakeru
             _pendingPause = false;
             _usingCachedThumbnail = false;
             _pendingThumbnailCapture = false;
+            _isThumbnailMode = false;
+            _textureNeedsUpdate = false;
             mediaPlayer.CloseMedia();
             if (videoDisplay != null) videoDisplay.texture = null;
         }
@@ -162,42 +166,75 @@ namespace DogaShiwakeru
         {
             if (mediaPlayer == null || mediaPlayer.Control == null) return;
 
-            if (mediaPlayer.TextureProducer != null)
+            // キャッシュサムネイル表示中は AVPro 呼び出しなし
+            if (_usingCachedThumbnail) return;
+
+            bool isPlaying = mediaPlayer.Control.IsPlaying();
+
+            // ── サムネイルモード: 低FPSシーク ──────────────────────────────
+            // 非選択動画は THUMBNAIL_SEEK_INTERVAL 秒ごとに1フレームだけ進める（0.5fps相当）
+            if (_isThumbnailMode && _isActivated && !_isLoading)
+            {
+                _thumbnailSeekTimer -= Time.deltaTime;
+                if (_thumbnailSeekTimer <= 0f)
+                {
+                    _thumbnailSeekTimer = THUMBNAIL_SEEK_INTERVAL;
+                    if (mediaPlayer.Info != null)
+                    {
+                        double duration = mediaPlayer.Info.GetDuration();
+                        if (duration > 0)
+                        {
+                            double current = mediaPlayer.Control.GetCurrentTime();
+                            mediaPlayer.Control.Seek((current + THUMBNAIL_SEEK_INTERVAL) % duration);
+                            _textureNeedsUpdate = true;
+                        }
+                    }
+                }
+            }
+
+            // ── テクスチャ更新 ──────────────────────────────────────────────
+            // 再生中 or シーク直後 or 初回フレーム待ち のときだけ AVPro を問い合わせる
+            bool needsTextureCheck = isPlaying || _textureNeedsUpdate || _pendingThumbnailCapture || _pendingPause;
+            if (needsTextureCheck && mediaPlayer.TextureProducer != null)
             {
                 Texture tex = mediaPlayer.TextureProducer.GetTexture();
-                if (tex != null && (videoDisplay.texture != tex || _uiUpdateTimer >= 0.5f)) // Periodic check for flip
+                if (tex != null)
                 {
-                    videoDisplay.texture = tex;
-                    UpdateAspectRatio(tex.width, tex.height);
-
-                    // Fix upside down issue
                     bool requiresFlip = mediaPlayer.TextureProducer.RequiresVerticalFlip();
-                    if (requiresFlip)
+
+                    if (isPlaying || videoDisplay.texture != tex)
                     {
-                        videoDisplay.uvRect = new Rect(0f, 1f, 1f, -1f); // Flip Y
-                    }
-                    else
-                    {
-                        videoDisplay.uvRect = new Rect(0f, 0f, 1f, 1f); // Normal
+                        videoDisplay.texture = tex;
+                        UpdateAspectRatio(tex.width, tex.height);
+                        videoDisplay.uvRect = requiresFlip
+                            ? new Rect(0f, 1f, 1f, -1f)
+                            : new Rect(0f, 0f, 1f, 1f);
+
+                        if (!isPlaying) _textureNeedsUpdate = false; // シーク済みフレームを受け取った
                     }
 
-                    // 初回フレーム取得時にサムネイルをキャプチャしてキャッシュ
                     if (_pendingThumbnailCapture)
                     {
                         _pendingThumbnailCapture = false;
                         CaptureAndCacheThumbnail(tex, requiresFlip);
                     }
 
-                    // サムネイル取得後に一時停止（非再生モードの初回フレーム表示用）
                     if (_pendingPause)
                     {
                         _pendingPause = false;
-                        if (mediaPlayer.Control != null) mediaPlayer.Control.Pause();
+                        mediaPlayer.Control.Pause();
+
+                        // 初回フレームキャプチャ完了 → サムネイルモードに移行
+                        // シークタイマーをランダムオフセットで初期化（全動画が同タイミングでシークしないよう分散）
+                        _isThumbnailMode = true;
+                        _thumbnailSeekTimer = UnityEngine.Random.Range(0f, THUMBNAIL_SEEK_INTERVAL);
                     }
                 }
             }
 
-            if (mediaPlayer.Control.IsPlaying() || _isActivated)
+            // ── プログレスUI更新 ────────────────────────────────────────────
+            // 再生中の動画だけ更新（非選択動画はポーズ中なので不要）
+            if (isPlaying)
             {
                 _uiUpdateTimer += Time.deltaTime;
                 if (_uiUpdateTimer >= 0.1f)
@@ -222,10 +259,7 @@ namespace DogaShiwakeru
             }
         }
 
-        public void OnSliderValueChanged(float value)
-        {
-            // Optional: implement manual scrubbing logic here
-        }
+        public void OnSliderValueChanged(float value) { }
 
         private void OnMediaPlayerEvent(MediaPlayer mp, MediaPlayerEvent.EventType et, ErrorCode errorCode)
         {
@@ -238,17 +272,12 @@ namespace DogaShiwakeru
 
                 case MediaPlayerEvent.EventType.FirstFrameReady:
                     _isLoading = false;
-                    _pendingThumbnailCapture = true; // Update() で初回フレームをキャプチャ
-                    // OpenMedia 後に AVPro がオーディオ設定をリセットする場合があるため再適用
+                    _pendingThumbnailCapture = true;
                     mp.AudioMuted = _isMuted;
                     mp.AudioVolume = _volume;
-                    // テクスチャを確実に描画させるため常に Play()。
-                    // autoPlay でない場合は Update() でテクスチャ取得後に Pause()。
                     mp.Control.Play();
                     if (!_autoPlay)
-                    {
                         _pendingPause = true;
-                    }
                     break;
 
                 case MediaPlayerEvent.EventType.Error:
@@ -263,21 +292,13 @@ namespace DogaShiwakeru
         private void UpdateAspectRatio(int width, int height)
         {
             if (_aspectRatioFitter != null && height > 0)
-            {
                 _aspectRatioFitter.aspectRatio = (float)width / height;
-            }
         }
 
-        /// <summary>
-        /// AVPro テクスチャを Texture2D としてキャプチャし ThumbnailCache に保存する。
-        /// 縦フリップが必要な場合は Blit 時に補正してから保存するため、
-        /// キャッシュから復元した際は uvRect を通常（0,0,1,1）のまま使える。
-        /// </summary>
         private void CaptureAndCacheThumbnail(Texture sourceTex, bool requiresFlip)
         {
             if (string.IsNullOrEmpty(_videoPath) || ThumbnailCache.HasEntry(_videoPath)) return;
 
-            // 長辺を 256px に収めてアスペクト比を維持
             const int MAX_DIM = 256;
             float scale = (float)MAX_DIM / Mathf.Max(sourceTex.width, sourceTex.height);
             int w = Mathf.Max(1, Mathf.RoundToInt(sourceTex.width * scale));
@@ -286,7 +307,6 @@ namespace DogaShiwakeru
             RenderTexture rt = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.Default);
 
             if (requiresFlip)
-                // 縦フリップを Blit 時に解消してから保存
                 Graphics.Blit(sourceTex, rt, new Vector2(1f, -1f), new Vector2(0f, 1f));
             else
                 Graphics.Blit(sourceTex, rt);
@@ -310,25 +330,29 @@ namespace DogaShiwakeru
             return string.Format("{0:00}:{1:00}", (int)time.TotalMinutes, time.Seconds);
         }
 
+        /// <summary>非選択になったときに呼ぶ。デコードを止めて低FPSサムネイルモードに移行。</summary>
         public void SetThumbnailMode()
         {
             _autoPlay = false;
-            // Pause() は呼ばない。
-            // 一度も選択されていない動画は _pendingPause で最初のフレームで停止済み。
-            // 選択→非選択になった動画はミュート状態でそのまま再生継続させる（ライブサムネイル）。
-            // ミュートは呼び出し元 SetSelectedVideo() の SetMute(true) が担う。
+            _isThumbnailMode = true;
+            _thumbnailSeekTimer = UnityEngine.Random.Range(0f, THUMBNAIL_SEEK_INTERVAL);
+
+            if (mediaPlayer != null && mediaPlayer.Control != null && mediaPlayer.Control.IsPlaying())
+                mediaPlayer.Control.Pause();
         }
 
+        /// <summary>選択されたときに呼ぶ。フル再生モードに復帰。</summary>
         public void RestorePlayMode(bool shouldPlay)
         {
             _autoPlay = shouldPlay;
             _pendingPause = false;
+            _isThumbnailMode = false;
+            _textureNeedsUpdate = false;
 
-            // キャッシュサムネイル表示中だった場合は AVPro で改めて開く
             if (_usingCachedThumbnail)
             {
                 _usingCachedThumbnail = false;
-                _isActivated = false; // Activate() を通るようにリセット
+                _isActivated = false;
             }
 
             if (mediaPlayer != null && mediaPlayer.Control != null && mediaPlayer.Control.CanPlay())
@@ -385,6 +409,7 @@ namespace DogaShiwakeru
         }
 
         public void SetAutoPlay(bool autoPlay) => _autoPlay = autoPlay;
+
         public void SetSelected(bool isSelected)
         {
             _isSelected = isSelected;
@@ -407,7 +432,6 @@ namespace DogaShiwakeru
 
             if (_isFullScreen && canvasRect != null)
             {
-                // フルスクリーン入場時はハイライトを非表示
                 if (selectionHighlight != null) selectionHighlight.SetActive(false);
                 transform.SetParent(canvasRect, true);
                 RectTransform rect = GetComponent<RectTransform>();
@@ -426,7 +450,6 @@ namespace DogaShiwakeru
                 RectTransform rect = GetComponent<RectTransform>();
                 rect.anchorMin = new Vector2(0.5f, 0.5f);
                 rect.anchorMax = new Vector2(0.5f, 0.5f);
-                // フルスクリーン解除時は選択状態に応じてハイライトを復元
                 if (selectionHighlight != null) selectionHighlight.SetActive(_isSelected);
             }
             UpdateProgressUI(_isFullScreen || _isSelected);

@@ -1,13 +1,23 @@
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using UnityEngine;
 
 namespace DogaShiwakeru
 {
     public class VideoLoader
     {
-        private static readonly string[] VideoExtensions = { "*.mp4" }; // Keep as array for future expansion
+        private static readonly string[] VideoExtensions = { "*.mp4" };
+
+        // ConcurrentDictionary for thread-safe access from background scan tasks
+        private readonly ConcurrentDictionary<string, bool> _dirContainsVideosCache = new ConcurrentDictionary<string, bool>();
+
+        public void ClearDirectoryCache()
+        {
+            _dirContainsVideosCache.Clear();
+        }
 
         public List<string> LoadVideosFromDirectory(string directoryPath)
         {
@@ -17,53 +27,45 @@ namespace DogaShiwakeru
                 return new List<string>();
             }
 
-            // Non-recursive search for the main display
-            var videoFiles = Directory.GetFiles(directoryPath, "*.mp4")
-                                      .ToList();
-            
+            var videoFiles = Directory.GetFiles(directoryPath, "*.mp4").ToList();
             return videoFiles;
         }
 
-        public bool DirectoryContainsVideos(string directoryPath, int maxDepth = 2)
+        public bool DirectoryContainsVideos(string directoryPath, int maxDepth = 2, CancellationToken ct = default)
         {
-            return DirectoryContainsVideosRecursive(directoryPath, 0, maxDepth);
+            if (ct.IsCancellationRequested) return false;
+            if (_dirContainsVideosCache.TryGetValue(directoryPath, out bool cached))
+                return cached;
+            bool result = DirectoryContainsVideosRecursive(directoryPath, 0, maxDepth, ct);
+            if (!ct.IsCancellationRequested)
+                _dirContainsVideosCache[directoryPath] = result;
+            return result;
         }
 
-        private bool DirectoryContainsVideosRecursive(string directoryPath, int currentDepth, int maxDepth)
+        private bool DirectoryContainsVideosRecursive(string directoryPath, int currentDepth, int maxDepth, CancellationToken ct)
         {
-            if (currentDepth >= maxDepth)
-            {
-                // Reached max depth, assume it *might* have videos without searching further.
-                return true;
-            }
+            if (ct.IsCancellationRequested) return false;
+            if (currentDepth >= maxDepth) return true;
 
             try
             {
-                // Check for video files at the current level.
                 foreach (var extension in VideoExtensions)
                 {
-                    if (Directory.EnumerateFiles(directoryPath, extension).Any())
-                    {
-                        return true; // Found a video, no need to go deeper.
-                    }
+                    if (ct.IsCancellationRequested) return false;
+                    if (Directory.EnumerateFiles(directoryPath, extension).Any()) return true;
                 }
 
-                // If no videos at this level, check subdirectories.
                 foreach (var subDir in Directory.EnumerateDirectories(directoryPath))
                 {
-                    if (DirectoryContainsVideosRecursive(subDir, currentDepth + 1, maxDepth))
-                    {
-                        return true; // Found a video in a subdirectory.
-                    }
+                    if (DirectoryContainsVideosRecursive(subDir, currentDepth + 1, maxDepth, ct)) return true;
                 }
             }
-            catch (System.Exception ex)
+            catch
             {
-                Debug.LogWarning($"Could not access directory {directoryPath}: {ex.Message}");
-                return false; // Assume no videos if access is denied.
+                // Silently ignore — called from background thread, no Unity API allowed
+                return false;
             }
 
-            // Scanned all allowed depths and found no videos.
             return false;
         }
     }

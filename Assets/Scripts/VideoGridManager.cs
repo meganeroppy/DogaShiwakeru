@@ -216,7 +216,6 @@ namespace DogaShiwakeru
 
         public void SetSelectionPlaybackSpeed(float speed)
         {
-            Debug.Log($"[VideoGridManager] SetSelectionPlaybackSpeed: {speed}");
             _currentSelectionSpeed = speed;
             var selectedUI = GetSelectedVideoUI();
             if (selectedUI != null)

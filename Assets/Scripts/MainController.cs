@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using SFB;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using UnityEngine.Networking;
 using UnityEngine.EventSystems;
 
@@ -43,12 +45,11 @@ namespace DogaShiwakeru
         private List<string> _modalSuggestions = new List<string>();
         private int _modalSuggestionIndex = -1;
         
-        private bool _performSaveQueued = false;
-        private bool _performRenameQueued = false;
-        private bool _performNavigateDownQueued = false;
-        private bool _performDriveSelectQueued = false;
-        private bool _performBookmarkJumpQueued = false;
         private bool _focusResetQueued = false;
+
+        private bool _speedSavePending = false; // defer PlayerPrefs.Save() to key release
+        private float _suggestionDebounceTimer = 0f;
+        private const float SUGGESTION_DEBOUNCE_SECONDS = 0.12f;
 
         private List<string> _bookmarks = new List<string>();
 
@@ -63,7 +64,21 @@ namespace DogaShiwakeru
         private const float KEY_REPEAT_RATE = 0.05f; // Very fast repeat for "ガーって" effect
         
         private ThumbnailGenerator _thumbnailGenerator;
-        
+
+        // Cached GUIStyles — created once to avoid per-frame allocations in OnGUI
+        private GUIStyle _modalTextFieldStyle;
+        private GUIStyle _modalSuggestionStyle;
+        private GUIStyle _modalSuggestionHighlightStyle;
+        private GUIStyle _hudStyleUpperLeft;
+        private GUIStyle _hudStyleUpperRight;
+        private GUIStyle _hudStyleLowerCenter;
+        private GUIStyle _hudStyleFullscreenName;
+
+        // Async suggestion scanning
+        private CancellationTokenSource _suggestionsCts;
+        private List<string> _pendingSuggestions;
+        private readonly object _suggestionsLock = new object();
+
         // --- Methods ---
 
         void Start()
@@ -125,8 +140,14 @@ namespace DogaShiwakeru
                 return;
             }
             
+            // Clear thumbnail textures from GPU when navigating to a different directory.
+            // Same-directory refresh (R key) keeps the cache so thumbnails don't flicker.
+            if (directoryPath != _currentVideoDirectory)
+                ThumbnailCache.Clear();
+
             _allVideoPaths = _videoLoader.LoadVideosFromDirectory(directoryPath);
             _currentVideoDirectory = directoryPath;
+            _videoLoader.ClearDirectoryCache();
             PlayerPrefs.SetString(LAST_VIDEO_DIRECTORY_KEY, _currentVideoDirectory);
             PlayerPrefs.Save();
             
@@ -178,20 +199,116 @@ namespace DogaShiwakeru
                 _fpsTimer = 0;
             }
 
+            // Debounce: fire the suggestion scan after the user stops typing
+            if (_suggestionDebounceTimer > 0f)
+            {
+                _suggestionDebounceTimer -= Time.unscaledDeltaTime;
+                if (_suggestionDebounceTimer <= 0f)
+                {
+                    _suggestionDebounceTimer = 0f;
+                    if (_isSaveModeActive || _isNavigateDownModeActive)
+                        LaunchSuggestionScan();
+                }
+            }
+
+            // Apply suggestions computed on background thread
+            lock (_suggestionsLock)
+            {
+                if (_pendingSuggestions != null)
+                {
+                    _modalSuggestions = _pendingSuggestions;
+                    _pendingSuggestions = null;
+                    _modalSuggestionIndex = -1; // Tab cycling starts from -1 so first Tab selects index 0
+                }
+            }
+
             if (_focusResetQueued)
             {
                 EventSystem.current.SetSelectedGameObject(null);
                 _focusResetQueued = false;
             }
-            
-            if (_performSaveQueued) { _performSaveQueued = false; PerformSaveAction(); }
-            if (_performRenameQueued) { _performRenameQueued = false; PerformRenameAction(); }
-            if (_performNavigateDownQueued) { _performNavigateDownQueued = false; PerformNavigateDownAction(); }
-            if (_performNavigateDownQueued) { _performNavigateDownQueued = false; PerformNavigateDownAction(); }
-            if (_performDriveSelectQueued) { _performDriveSelectQueued = false; PerformDriveSelectAction(); }
-            if (_performBookmarkJumpQueued) { _performBookmarkJumpQueued = false; PerformBookmarkJumpAction(); }
 
-            if (!_isSaveModeActive && !_isRenameModeActive && !_isNavigateDownModeActive && !_isDriveSelectModeActive && !_isBookmarkModeActive)
+
+            bool modalActive = _isSaveModeActive || _isRenameModeActive || _isNavigateDownModeActive || _isDriveSelectModeActive || _isBookmarkModeActive;
+
+            if (modalActive)
+            {
+                // Escape でモーダルを閉じる
+                if (Input.GetKeyDown(KeyCode.Escape))
+                {
+                    _isSaveModeActive = false;
+                    _isRenameModeActive = false;
+                    _isNavigateDownModeActive = false;
+                    _isDriveSelectModeActive = false;
+                    _isBookmarkModeActive = false;
+                    _focusResetQueued = true;
+                    Input.ResetInputAxes();
+                    return;
+                }
+
+                // Enter で確定
+                if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
+                {
+                    if (_isRenameModeActive) PerformRenameAction();
+                    else if (_isSaveModeActive) PerformSaveAction();
+                    else if (_isNavigateDownModeActive) PerformNavigateDownAction();
+                    else if (_isDriveSelectModeActive) PerformDriveSelectAction();
+                    else if (_isBookmarkModeActive) PerformBookmarkJumpAction();
+                    return;
+                }
+
+                // Tab で候補を循環
+                if (Input.GetKeyDown(KeyCode.Tab) && (_isSaveModeActive || _isNavigateDownModeActive || _isDriveSelectModeActive || _isBookmarkModeActive))
+                {
+                    if (_modalSuggestions.Count > 0)
+                    {
+                        bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+                        if (shift)
+                        {
+                            _modalSuggestionIndex--;
+                            if (_modalSuggestionIndex < 0) _modalSuggestionIndex = _modalSuggestions.Count - 1;
+                        }
+                        else
+                        {
+                            _modalSuggestionIndex = (_modalSuggestionIndex + 1) % _modalSuggestions.Count;
+                        }
+                        if (!_isDriveSelectModeActive && !_isBookmarkModeActive)
+                            _modalInputString = _modalSuggestions[_modalSuggestionIndex];
+                        UpdateThumbnailPreview();
+                    }
+                    return;
+                }
+
+                // テキスト入力：Input.inputString は OS キーボードバッファ直読みでフレーム間の全キーを取得
+                if (!_isDriveSelectModeActive && !_isBookmarkModeActive && !string.IsNullOrEmpty(Input.inputString))
+                {
+                    bool changed = false;
+                    foreach (char c in Input.inputString)
+                    {
+                        if (c == '\b') // Backspace
+                        {
+                            if (_modalInputString.Length > 0)
+                            {
+                                _modalInputString = _modalInputString.Substring(0, _modalInputString.Length - 1);
+                                changed = true;
+                            }
+                        }
+                        else if (c == '\r' || c == '\n') { /* Enter は上で処理済み */ }
+                        else if (c >= ' ') // 印字可能文字
+                        {
+                            _modalInputString += c;
+                            changed = true;
+                        }
+                    }
+                    if (changed)
+                    {
+                        _modalSuggestionIndex = -1;
+                        if (_isSaveModeActive || _isNavigateDownModeActive)
+                            UpdateSubdirectorySuggestions();
+                    }
+                }
+            }
+            else
             {
                 HandleNormalInput();
             }
@@ -259,15 +376,19 @@ namespace DogaShiwakeru
                     _currentPlaybackSpeed = Mathf.Clamp(_currentPlaybackSpeed, 0.25f, 10.0f);
                 }
 
-                Debug.Log($"[MainController] New Speed: {_currentPlaybackSpeed}");
                 videoGridManager.SetSelectionPlaybackSpeed(_currentPlaybackSpeed);
-                
-                // Save settings
                 PlayerPrefs.SetFloat(PLAYBACK_SPEED_KEY, _currentPlaybackSpeed);
-                PlayerPrefs.Save();
+                _speedSavePending = true; // Save deferred to key release to avoid per-repeat disk I/O
 
                 _speedDisplayText = $"Speed: x{_currentPlaybackSpeed:0.00}";
                 _speedDisplayTimer = SPEED_DISPLAY_DURATION;
+            }
+
+            // Flush PlayerPrefs only when Q/E/W is released
+            if (_speedSavePending && (Input.GetKeyUp(KeyCode.Q) || Input.GetKeyUp(KeyCode.E) || Input.GetKeyUp(KeyCode.W)))
+            {
+                PlayerPrefs.Save();
+                _speedSavePending = false;
             }
 
             if (Input.GetKeyDown(KeyCode.S))
@@ -277,7 +398,7 @@ namespace DogaShiwakeru
                     _isSaveModeActive = true;
                     _modalInputString = "";
                     _modalSuggestionIndex = -1;
-                    UpdateSubdirectorySuggestions();
+                    LaunchSuggestionScan(); // immediate on open, no debounce needed
                     _focusResetQueued = true;
                 }
             }
@@ -362,7 +483,7 @@ namespace DogaShiwakeru
                             _modalInputString = "";
                             UpdateDriveSuggestions();
                             _focusResetQueued = true;
-                        }
+                                }
                     }
                     else // Down Arrow
                     {
@@ -371,9 +492,9 @@ namespace DogaShiwakeru
                             _isNavigateDownModeActive = true;
                             _modalInputString = "";
                             _modalSuggestionIndex = -1;
-                            UpdateSubdirectorySuggestions();
+                            LaunchSuggestionScan(); // immediate on open, no debounce needed
                             _focusResetQueued = true;
-                        }
+                                }
                     }
                 }
                 else
@@ -484,33 +605,84 @@ namespace DogaShiwakeru
             }
         }
 
+        // Called from text-change in OnGUI: only resets the debounce timer, no allocation
         private void UpdateSubdirectorySuggestions()
         {
-            _modalSuggestions.Clear();
-            _modalSuggestionIndex = -1;
-            if (string.IsNullOrEmpty(_currentVideoDirectory) || !Directory.Exists(_currentVideoDirectory)) return;
-            try
+            _suggestionsCts?.Cancel(); // stop any in-flight scan immediately
+            _suggestionDebounceTimer = SUGGESTION_DEBOUNCE_SECONDS;
+        }
+
+        // Called from Update() when the debounce timer fires, or directly on modal open (no debounce needed)
+        private void LaunchSuggestionScan()
+        {
+            _suggestionsCts?.Cancel();
+            _suggestionsCts = new CancellationTokenSource();
+            var ct = _suggestionsCts.Token;
+
+            // Snapshot mutable state before handing off to background thread
+            string inputSnapshot = _modalInputString ?? "";
+            string dirSnapshot = _currentVideoDirectory;
+            bool isSaveMode = _isSaveModeActive;
+            var loader = _videoLoader;
+
+            Task.Run(() =>
             {
-                var subDirs = Directory.GetDirectories(_currentVideoDirectory);
-                foreach (var dir in subDirs)
+                var results = new List<string>();
+                try
                 {
-                    string dirName = new DirectoryInfo(dir).Name;
-                    if (string.IsNullOrEmpty(_modalInputString) || dirName.StartsWith(_modalInputString, System.StringComparison.OrdinalIgnoreCase))
+                    if (string.IsNullOrEmpty(dirSnapshot) || !Directory.Exists(dirSnapshot)) return;
+
+                    // "anime/title" のようなサブフォルダパスに対応
+                    int lastSep = inputSnapshot.LastIndexOfAny(new char[] { '/', '\\' });
+                    string basePath = lastSep >= 0 ? inputSnapshot.Substring(0, lastSep) : "";
+                    string filter   = lastSep >= 0 ? inputSnapshot.Substring(lastSep + 1) : inputSnapshot;
+
+                    string searchDir = string.IsNullOrEmpty(basePath)
+                        ? dirSnapshot
+                        : Path.Combine(dirSnapshot, basePath);
+
+                    if (!Directory.Exists(searchDir)) return;
+
+                    const int MaxSuggestions = 30;
+                    var subDirs = Directory.GetDirectories(searchDir);
+                    foreach (var dir in subDirs)
                     {
-                        if (_videoLoader.DirectoryContainsVideos(dir))
+                        if (ct.IsCancellationRequested) return;
+                        if (results.Count >= MaxSuggestions) break;
+                        string dirName = new DirectoryInfo(dir).Name;
+                        if (string.IsNullOrEmpty(filter) || dirName.StartsWith(filter, System.StringComparison.OrdinalIgnoreCase))
                         {
-                            _modalSuggestions.Add(dirName);
+                            string suggestion = string.IsNullOrEmpty(basePath) ? dirName : basePath + "/" + dirName;
+                            if (isSaveMode || loader.DirectoryContainsVideos(dir, ct: ct))
+                            {
+                                results.Add(suggestion);
+                            }
+
+                            // マッチしたフォルダの直下サブフォルダも展開して候補に追加
+                            if (string.IsNullOrEmpty(basePath))
+                            {
+                                foreach (var childDir in Directory.GetDirectories(dir))
+                                {
+                                    if (ct.IsCancellationRequested) return;
+                                    if (results.Count >= MaxSuggestions) break;
+                                    string childName = new DirectoryInfo(childDir).Name;
+                                    string childSuggestion = dirName + "/" + childName;
+                                    if (isSaveMode || loader.DirectoryContainsVideos(childDir, ct: ct))
+                                    {
+                                        results.Add(childSuggestion);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-            }
-            catch(System.Exception e) { Debug.LogError($"Error getting subdirectories: {e.Message}"); }
-            
-            if (_modalSuggestions.Count > 0) 
-            {
-               _modalSuggestionIndex = 0;
-               UpdateThumbnailPreview();
-            }
+                catch { /* ignore — no Unity API on background thread */ }
+
+                if (!ct.IsCancellationRequested)
+                {
+                    lock (_suggestionsLock) { _pendingSuggestions = results; }
+                }
+            }, ct);
         }
 
         private void PerformSaveAction()
@@ -633,51 +805,9 @@ namespace DogaShiwakeru
         {
             if (_isSaveModeActive || _isRenameModeActive || _isNavigateDownModeActive || _isDriveSelectModeActive || _isBookmarkModeActive)
             {
-                Event e = Event.current;
-                if (e.type == EventType.KeyDown)
-                {
-                    if (e.keyCode == KeyCode.Escape) 
-                    { 
-                        _isSaveModeActive = false; 
-                        _isRenameModeActive = false; 
-                        _isNavigateDownModeActive = false;
-                        _isDriveSelectModeActive = false;
-                        _isBookmarkModeActive = false;
-                        _focusResetQueued = true; 
-                        Input.ResetInputAxes(); 
-                        e.Use(); 
-                    }
-                    else if (e.keyCode == KeyCode.Tab && (_isSaveModeActive || _isNavigateDownModeActive || _isDriveSelectModeActive || _isBookmarkModeActive)) 
-                    {
-                        if (_modalSuggestions.Count > 0)
-                        {
-                            if (e.shift)
-                            {
-                                 _modalSuggestionIndex--;
-                                 if (_modalSuggestionIndex < 0) _modalSuggestionIndex = _modalSuggestions.Count - 1;
-                            }
-                            else
-                            {
-                                _modalSuggestionIndex = (_modalSuggestionIndex + 1) % _modalSuggestions.Count;
-                            }
-                            
-                            if (!_isDriveSelectModeActive && !_isBookmarkModeActive) _modalInputString = _modalSuggestions[_modalSuggestionIndex];
-                            
-                            UpdateThumbnailPreview();
-                        }
-                        e.Use();
-                    }
-                    else if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) 
-                    {
-                        if (_isRenameModeActive) _performRenameQueued = true; 
-                        else if (_isSaveModeActive) _performSaveQueued = true;
-                        else if (_isNavigateDownModeActive) _performNavigateDownQueued = true;
-                        else if (_isDriveSelectModeActive) _performDriveSelectQueued = true;
-                        else if (_isBookmarkModeActive) _performBookmarkJumpQueued = true;
-                        e.Use(); 
-                    }
-                }
-                
+                // キー入力は Update() の Input.inputString / GetKeyDown で処理済み
+                // OnGUI はモーダルの描画のみ担当
+
                 GUI.color = new Color(0, 0, 0, 0.7f);
                 GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
                 GUI.color = Color.white;
@@ -698,20 +828,27 @@ namespace DogaShiwakeru
 
                 if (!_isDriveSelectModeActive && !_isBookmarkModeActive)
                 {
-                    GUI.SetNextControlName("SaveInput");
-                    string newText = GUI.TextField(new Rect(boxRect.x + 10, boxRect.y + 30, boxRect.width - 20, 30), _modalInputString, new GUIStyle(GUI.skin.textField) { fontSize = 18 });
-                    if (newText != _modalInputString) 
-                    { 
-                        _modalInputString = newText;
-                        if (_isSaveModeActive || _isNavigateDownModeActive) UpdateSubdirectorySuggestions(); 
-                    }
-                    GUI.FocusControl("SaveInput");
+                    if (_modalTextFieldStyle == null)
+                        _modalTextFieldStyle = new GUIStyle(GUI.skin.textField) { fontSize = 18 };
+                    // 入力は Update() の Input.inputString で処理。
+                    // GUI.TextField は IMGUI がキーを横取りするため GUI.Label で表示のみ行う
+                    bool cursorOn = Mathf.FloorToInt(Time.realtimeSinceStartup * 2f) % 2 == 0;
+                    string displayText = _modalInputString + (cursorOn ? "|" : "");
+                    Rect inputRect = new Rect(boxRect.x + 10, boxRect.y + 30, boxRect.width - 20, 30);
+                    // テキストフィールド風の背景を描画してから文字を Label で重ねる
+                    GUI.Box(inputRect, GUIContent.none);
+                    GUI.Label(inputRect, "  " + displayText, _modalTextFieldStyle);
                 }
 
                 if ((_isSaveModeActive || _isNavigateDownModeActive || _isDriveSelectModeActive || _isBookmarkModeActive) && _modalSuggestions.Count > 0)
                 {
-                    GUIStyle sStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.MiddleLeft };
-                    GUIStyle hStyle = new GUIStyle(sStyle) { normal = { textColor = Color.yellow } };
+                    if (_modalSuggestionStyle == null)
+                    {
+                        _modalSuggestionStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.MiddleLeft };
+                        _modalSuggestionHighlightStyle = new GUIStyle(_modalSuggestionStyle) { normal = { textColor = Color.yellow } };
+                    }
+                    GUIStyle sStyle = _modalSuggestionStyle;
+                    GUIStyle hStyle = _modalSuggestionHighlightStyle;
                     float startY = (_isDriveSelectModeActive || _isBookmarkModeActive) ? boxRect.y + 30 : boxRect.y + 70;
                     
                     // Limit the number of items shown if they exceed the box height
@@ -754,52 +891,48 @@ namespace DogaShiwakeru
             }
             else
             {
-                GUIStyle style = new GUIStyle { fontSize = 20, normal = { textColor = Color.white }, alignment = TextAnchor.UpperLeft };
-                
-                // Increased Y-offset to prevent text from being cut off at the top
+                // Initialise cached HUD styles once — avoids allocating new GUIStyle every frame
+                if (_hudStyleUpperLeft == null)
+                {
+                    _hudStyleUpperLeft   = new GUIStyle { fontSize = 20, normal = { textColor = Color.white }, alignment = TextAnchor.UpperLeft };
+                    _hudStyleUpperRight  = new GUIStyle { fontSize = 20, normal = { textColor = Color.white }, alignment = TextAnchor.UpperRight };
+                    _hudStyleFullscreenName = new GUIStyle { fontSize = 20, normal = { textColor = Color.white }, alignment = TextAnchor.UpperLeft, wordWrap = true };
+                    _hudStyleLowerCenter = new GUIStyle { fontSize = 24, normal = { textColor = Color.white }, alignment = TextAnchor.LowerCenter };
+                }
+
                 const int TOP_MARGIN = 20;
 
                 GUI.color = Color.black;
-                GUI.Label(new Rect(11, TOP_MARGIN + 1, 300, 30), _videoCountText, style);
+                GUI.Label(new Rect(11, TOP_MARGIN + 1, 300, 30), _videoCountText, _hudStyleUpperLeft);
                 GUI.color = Color.white;
-                GUI.Label(new Rect(10, TOP_MARGIN, 300, 30), _videoCountText, style);
+                GUI.Label(new Rect(10, TOP_MARGIN, 300, 30), _videoCountText, _hudStyleUpperLeft);
 
-                style.alignment = TextAnchor.UpperRight;
                 Rect dirRect = new Rect(Screen.width - 710, TOP_MARGIN, 700, 60);
                 GUI.color = Color.black;
-                GUI.Label(new Rect(dirRect.x + 1, dirRect.y + 1, dirRect.width, dirRect.height), _currentVideoDirectory, style);
+                GUI.Label(new Rect(dirRect.x + 1, dirRect.y + 1, dirRect.width, dirRect.height), _currentVideoDirectory, _hudStyleUpperRight);
                 GUI.color = Color.white;
-                GUI.Label(dirRect, _currentVideoDirectory, style);
+                GUI.Label(dirRect, _currentVideoDirectory, _hudStyleUpperRight);
 
                 if (!string.IsNullOrEmpty(_fullscreenDisplayFileName))
                 {
-                    style.alignment = TextAnchor.UpperLeft;
-                    style.fontSize = 20;
-                    style.wordWrap = true; 
-
-                    // Increased Y-offset here as well
-                    Rect filenameRect = new Rect(10, TOP_MARGIN + 30, Screen.width - 20, 60); 
-
-                    GUI.color = Color.black; 
-                    GUI.Label(new Rect(filenameRect.x + 1, filenameRect.y + 1, filenameRect.width, filenameRect.height), _fullscreenDisplayFileName, style);
-                    GUI.color = Color.white; 
-                    GUI.Label(filenameRect, _fullscreenDisplayFileName, style);
+                    Rect filenameRect = new Rect(10, TOP_MARGIN + 30, Screen.width - 20, 60);
+                    GUI.color = Color.black;
+                    GUI.Label(new Rect(filenameRect.x + 1, filenameRect.y + 1, filenameRect.width, filenameRect.height), _fullscreenDisplayFileName, _hudStyleFullscreenName);
+                    GUI.color = Color.white;
+                    GUI.Label(filenameRect, _fullscreenDisplayFileName, _hudStyleFullscreenName);
                 }
-                
+
                 if (_volumeDisplayTimer > 0)
                 {
-                    style.alignment = TextAnchor.LowerCenter; style.fontSize = 24; style.wordWrap = false; 
-                    GUI.color = Color.black; GUI.Label(new Rect(0, Screen.height - 41, Screen.width, 40), _volumeDisplayText, style);
-                    GUI.color = Color.white; GUI.Label(new Rect(0, Screen.height - 40, Screen.width, 40), _volumeDisplayText, style);
+                    GUI.color = Color.black; GUI.Label(new Rect(0, Screen.height - 41, Screen.width, 40), _volumeDisplayText, _hudStyleLowerCenter);
+                    GUI.color = Color.white; GUI.Label(new Rect(0, Screen.height - 40, Screen.width, 40), _volumeDisplayText, _hudStyleLowerCenter);
                 }
 
                 if (_speedDisplayTimer > 0)
                 {
-                    style.alignment = TextAnchor.LowerCenter; style.fontSize = 24; style.wordWrap = false;
-                    // Display above volume text
                     float yPos = (_volumeDisplayTimer > 0) ? Screen.height - 80 : Screen.height - 40;
-                    GUI.color = Color.black; GUI.Label(new Rect(0, yPos - 1, Screen.width, 40), _speedDisplayText, style);
-                    GUI.color = Color.white; GUI.Label(new Rect(0, yPos, Screen.width, 40), _speedDisplayText, style);
+                    GUI.color = Color.black; GUI.Label(new Rect(0, yPos - 1, Screen.width, 40), _speedDisplayText, _hudStyleLowerCenter);
+                    GUI.color = Color.white; GUI.Label(new Rect(0, yPos, Screen.width, 40), _speedDisplayText, _hudStyleLowerCenter);
                 }
             }
         }
